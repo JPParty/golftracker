@@ -1,0 +1,41 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <meta name="theme-color" content="#020617" />
+  <link rel="manifest" href="/manifest.json" />
+  <link rel="icon" href="/icon.svg" type="image/svg+xml" />
+  <link rel="stylesheet" href="/styles.css" />
+  <title>GolfTracker</title>
+</head>
+<body>
+  <main class="app">
+    <section class="header">
+      <div class="kicker">LPGA Live Leaderboard</div>
+      <h1 id="eventName">GolfTracker</h1>
+      <div class="meta" id="lastUpdated">Loading leaderboard…</div>
+      <div class="toolbar">
+        <button id="refreshButton" type="button">Refresh</button>
+        <div class="status" id="statusText">Auto-refresh on</div>
+      </div>
+    </section>
+
+    <section class="card" aria-label="Leaderboard">
+      <div class="table-head">
+        <div>Pos</div>
+        <div>Player</div>
+        <div style="text-align:center">Thru</div>
+        <div style="text-align:right">Total</div>
+      </div>
+      <div id="leaderboard">
+        <div class="message">Loading…</div>
+      </div>
+    </section>
+
+    <div class="footer-note">Data refreshes every 60 seconds.</div>
+  </main>
+
+  <script src="/app.js"></script>
+</body>
+</html>
