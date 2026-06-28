@@ -13,7 +13,7 @@ import {
   stripTags
 } from "./utils.js";
 
-export const LPGA_PARSER_VERSION = "v1.3";
+export const LPGA_PARSER_VERSION = "v1.4";
 
 const COUNTRY_CODES = new Set([
   "USA", "KOR", "JPN", "AUS", "ENG", "SWE", "THA", "CAN", "CHN", "FRA", "GER", "ESP", "MEX", "NZL", "RSA", "NED", "SCO", "IRL", "ITA", "NOR", "DEN", "FIN", "TPE", "PHI", "MAS", "SIN", "COL", "BRA", "ARG", "IND"
@@ -185,15 +185,43 @@ function normalizeRoundScore(value) {
 }
 
 function findEventName(lines) {
-  const ignored = new Set(["leaderboard", "schedule", "tournaments", "players", "news", "video", "full leaderboard"]);
-  const candidate = lines.find(line => {
-    const lower = line.toLowerCase();
-    return line.length > 8 &&
-      line.length < 80 &&
-      !ignored.has(lower) &&
-      /(championship|classic|open|invitational|cup|tournament|women|lpga)/i.test(line);
-  });
-  return candidate || "Current LPGA Tournament";
+  const fromTitle = lines.find(line => /\|\s*Leaderboard\s*\|\s*LPGA/i.test(line));
+  if (fromTitle) {
+    const titleCandidate = cleanEventName(fromTitle.split("|")[0]);
+    if (isLikelyEventName(titleCandidate)) return titleCandidate;
+  }
+
+  const detailsIndex = lines.findIndex(line => /^Tournament Details$/i.test(line));
+  if (detailsIndex >= 0) {
+    for (let i = detailsIndex + 1; i < Math.min(lines.length, detailsIndex + 12); i++) {
+      const candidate = cleanEventName(lines[i]);
+      if (isLikelyEventName(candidate)) return candidate;
+    }
+  }
+
+  const candidate = lines.find(line => isLikelyEventName(cleanEventName(line)));
+  return cleanEventName(candidate) || "Current LPGA Tournament";
+}
+
+function cleanEventName(value) {
+  return String(value || "")
+    .replace(/^#+\s*/, "")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+function isLikelyEventName(value) {
+  const s = cleanEventName(value);
+  const lower = s.toLowerCase();
+  const ignored = new Set([
+    "leaderboard", "schedule", "tournaments", "players", "athletes", "news", "video",
+    "full leaderboard", "lpga professionals", "tournament details", "login or sign up"
+  ]);
+
+  return s.length > 8 &&
+    s.length < 90 &&
+    !ignored.has(lower) &&
+    /(championship|classic|open|invitational|cup|tournament|women|lpga|founders|annika|evian|kpmg|cme|lotte|maybank|bmw|fm|cpkc)/i.test(s);
 }
 
 function findSourceUpdated(lines) {

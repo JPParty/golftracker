@@ -20,6 +20,7 @@ function updateDebugStatus(data) {
     '<b>Tournament:</b> ' + escapeHtml(data.eventName || 'Unknown') + '<br>' +
     '<b>Tournament Slug:</b> ' + escapeHtml(data.tournamentSlug || 'Unknown') + '<br>' +
     '<b>Resolver:</b> ' + escapeHtml(resolution.method || 'Unknown') + '<br>' +
+    (resolution.dateText || data.resolvedEventDateText ? '<b>Resolved Dates:</b> ' + escapeHtml(resolution.dateText || data.resolvedEventDateText) + '<br>' : '') +
     '<b>Source Updated:</b> ' + escapeHtml(data.sourceUpdated || 'Unknown') + '<br>' +
     '<b>Worker Retrieved:</b> ' + escapeHtml(data.updatedAt ? new Date(data.updatedAt).toLocaleString() : 'Unknown') + '<br>' +
     '<b>Cache:</b> ' + escapeHtml(cacheText) + '<br>' +

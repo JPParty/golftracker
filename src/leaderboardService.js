@@ -147,8 +147,11 @@ async function fetchLpgaStack({ appVersion, tournament }) {
       method: tournament.method,
       reason: tournament.reason,
       cachedResolver: tournament.cachedResolver || false,
+      dateText: tournament.resolvedEventDateText || null,
+      dateStatus: tournament.resolvedDateStatus || null,
       candidatesTested: tournament.resolverCandidatesTested || []
     },
+    resolvedEventDateText: tournament.resolvedEventDateText || null,
     eventName: liveParsed.eventName || "Current LPGA Tournament",
     sourceUpdated: liveParsed.sourceUpdated || null,
     updatedAt: new Date().toISOString(),
@@ -168,7 +171,7 @@ async function fetchEspnFallback(appVersion) {
     try {
       const response = await fetch(url, {
         headers: {
-          "user-agent": "Mozilla/5.0 GolfTracker/0.3.0",
+          "user-agent": "Mozilla/5.0 GolfTracker/0.3.1",
           "accept": "application/json,text/plain,*/*"
         }
       });
@@ -231,7 +234,7 @@ function makeWarning(lpgaResult, espnError, extraMessage) {
 
   if (lpgaResult.livePlayersLoaded < MIN_EXPECTED_FULL_FIELD) {
     if (lpgaResult.rosterPlayersLoaded > lpgaResult.livePlayersLoaded) {
-      messages.push(`LPGA live source provided ${lpgaResult.livePlayersLoaded} scored players; entries source added roster-only players for a ${lpgaResult.players.length}-player view.`);
+      messages.push(`LPGA live source currently exposes ${lpgaResult.livePlayersLoaded} scored rows; Entries added roster-only rows for a ${lpgaResult.players.length}-player view. Roster-only rows will not gain live scores unless a live source exposes those players.`);
     } else {
       messages.push(`Partial leaderboard: LPGA provided ${lpgaResult.livePlayersLoaded} live players.`);
     }
@@ -259,7 +262,7 @@ function cacheAndReturn(data, now, key) {
 
 function htmlHeaders() {
   return {
-    "user-agent": "Mozilla/5.0 GolfTracker/0.3.0",
+    "user-agent": "Mozilla/5.0 GolfTracker/0.3.1",
     "accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8"
   };
 }

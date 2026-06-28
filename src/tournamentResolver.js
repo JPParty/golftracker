@@ -1,13 +1,27 @@
 import { decodeEntities, stripTags } from "./utils.js";
 import { parseLpgaLeaderboard } from "./lpgaParser.js";
 
-export const TOURNAMENT_RESOLVER_VERSION = "v0.3.0";
+export const TOURNAMENT_RESOLVER_VERSION = "v0.3.1";
 
 const LPGA_BASE = "https://www.lpga.com";
 const TOURNAMENTS_URL = `${LPGA_BASE}/tournaments`;
 const DEFAULT_FALLBACK_SLUG = "kpmgwomenspgachampionship";
 const RESOLVER_CACHE_SECONDS = 10 * 60;
-const MAX_CANDIDATES_TO_TEST = 8;
+const MAX_CANDIDATES_TO_TEST = 12;
+const MONTHS = {
+  jan: 0, january: 0,
+  feb: 1, february: 1,
+  mar: 2, march: 2,
+  apr: 3, april: 3,
+  may: 4,
+  jun: 5, june: 5,
+  jul: 6, july: 6,
+  aug: 7, august: 7,
+  sep: 8, sept: 8, september: 8,
+  oct: 9, october: 9,
+  nov: 10, november: 10,
+  dec: 11, december: 11
+};
 
 let resolverCache = {
   expiresAt: 0,
@@ -64,7 +78,7 @@ async function resolveFromLpgaTournamentIndex(fetchOptions) {
   const response = await fetch(TOURNAMENTS_URL, {
     ...fetchOptions,
     headers: {
-      "user-agent": "Mozilla/5.0 GolfTracker/0.3.0",
+      "user-agent": "Mozilla/5.0 GolfTracker/0.3.1",
       "accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
       ...(fetchOptions.headers || {})
     }
@@ -85,10 +99,12 @@ async function resolveFromLpgaTournamentIndex(fetchOptions) {
     };
   }
 
+  const today = startOfUtcDay(new Date());
   const tested = [];
+
   for (const candidate of candidates.slice(0, MAX_CANDIDATES_TO_TEST)) {
     const urls = buildLpgaUrls(candidate.slug);
-    const test = await testTournamentCandidate(urls).catch(error => ({
+    const test = await testTournamentCandidate(urls, candidate, today).catch(error => ({
       slug: candidate.slug,
       ok: false,
       score: 0,
@@ -100,32 +116,35 @@ async function resolveFromLpgaTournamentIndex(fetchOptions) {
 
   const best = tested
     .filter(candidate => candidate.ok)
-    .sort((a, b) => b.score - a.score)[0];
+    .sort((a, b) => b.score - a.score || b.indexScore - a.indexScore || a.slug.localeCompare(b.slug))[0];
 
   if (best) {
     return {
       ...buildLpgaUrls(best.slug),
-      method: "lpga-tournament-index",
-      reason: `Selected ${best.slug} from LPGA tournament index after testing current leaderboard pages.`,
+      method: "lpga-tournament-index-date-aware",
+      reason: `Selected ${best.slug} using LPGA schedule date matching plus live leaderboard validation.`,
+      resolvedEventDateText: best.dateText || best.pageDateText || null,
+      resolvedDateStatus: best.dateStatus || best.pageDateStatus || null,
       resolverCandidatesTested: tested.map(summarizeTestedCandidate)
     };
   }
 
-  // If the index gave us candidates but none currently parse as a leaderboard,
-  // choose the strongest index candidate so the app still moves forward without a code change.
   const top = candidates[0];
   return {
     ...buildLpgaUrls(top.slug),
     method: "lpga-tournament-index-unverified",
     reason: `No candidate leaderboard parsed successfully; using top LPGA index candidate ${top.slug}.`,
+    resolvedEventDateText: top.dateText || null,
+    resolvedDateStatus: top.dateStatus || null,
     resolverCandidatesTested: tested.map(summarizeTestedCandidate)
   };
 }
 
 function extractTournamentCandidates(html) {
   const candidates = new Map();
-  const text = decodeEntities(stripTags(html));
+  const fullText = decodeEntities(stripTags(html));
   const normalizedHtml = decodeEntities(String(html || ""));
+  const today = startOfUtcDay(new Date());
 
   const regexes = [
     /href=["']([^"']*\/tournaments\/([a-z0-9-]+)\/(?:overview|leaderboard|results|entries|pairings)[^"']*)["']/gi,
@@ -140,15 +159,20 @@ function extractTournamentCandidates(html) {
       if (!slug || shouldIgnoreSlug(slug)) continue;
 
       const index = match.index || 0;
-      const window = normalizedHtml.slice(Math.max(0, index - 800), Math.min(normalizedHtml.length, index + 1200));
-      const score = scoreCandidateWindow(window, text);
+      const window = normalizedHtml.slice(Math.max(0, index - 1400), Math.min(normalizedHtml.length, index + 1000));
+      const textWindow = decodeEntities(stripTags(window)).replace(/\s+/g, " ").trim();
+      const dateInfo = extractDateInfo(textWindow, today);
+      const score = scoreCandidateWindow(textWindow, fullText, dateInfo);
       const existing = candidates.get(slug);
 
       if (!existing || score > existing.indexScore) {
         candidates.set(slug, {
           slug,
           indexScore: score,
-          hint: makeCandidateHint(window)
+          hint: makeCandidateHint(textWindow),
+          dateText: dateInfo?.dateText || null,
+          dateStatus: dateInfo?.status || null,
+          daysFromToday: typeof dateInfo?.daysFromToday === "number" ? dateInfo.daysFromToday : null
         });
       }
     }
@@ -158,10 +182,10 @@ function extractTournamentCandidates(html) {
     .sort((a, b) => b.indexScore - a.indexScore || a.slug.localeCompare(b.slug));
 }
 
-async function testTournamentCandidate(urls) {
+async function testTournamentCandidate(urls, candidate, today) {
   const response = await fetch(urls.leaderboardUrl, {
     headers: {
-      "user-agent": "Mozilla/5.0 GolfTracker/0.3.0",
+      "user-agent": "Mozilla/5.0 GolfTracker/0.3.1",
       "accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8"
     }
   });
@@ -173,37 +197,43 @@ async function testTournamentCandidate(urls) {
   const html = await response.text();
   const parsed = parseLpgaLeaderboard(html);
   const playersParsed = parsed.players?.length || 0;
-  const sourceUpdatedTime = parsed.sourceUpdated ? Date.parse(parsed.sourceUpdated) : null;
-  const sourceUpdatedScore = sourceUpdatedTime && !Number.isNaN(sourceUpdatedTime)
-    ? Math.max(0, 30 - Math.round((Date.now() - sourceUpdatedTime) / 3600000))
-    : 0;
+  const pageText = decodeEntities(stripTags(html)).replace(/\s+/g, " ").trim();
+  const pageDateInfo = extractDateInfo(pageText, today);
+  const sourceFreshScore = scoreSourceUpdated(parsed.sourceUpdated, today);
+  const dateScore = Math.max(
+    scoreDateInfo(candidate, today),
+    scoreDateInfo(pageDateInfo, today)
+  );
 
   const score =
+    dateScore +
+    sourceFreshScore +
     playersParsed * 10 +
-    sourceUpdatedScore +
-    (parsed.sourceUpdated ? 25 : 0) +
-    (parsed.eventName ? 5 : 0);
+    (parsed.sourceUpdated ? 40 : 0) +
+    (parsed.eventName && !/^LPGA Professionals$/i.test(parsed.eventName) ? 15 : 0);
 
   return {
     slug: urls.slug,
-    ok: playersParsed > 0,
+    ok: playersParsed > 0 || dateScore >= 1000,
     score,
     playersParsed,
     sourceUpdated: parsed.sourceUpdated || null,
     eventName: parsed.eventName || null,
+    pageDateText: pageDateInfo?.dateText || null,
+    pageDateStatus: pageDateInfo?.status || null,
     status: response.status
   };
 }
 
-function scoreCandidateWindow(window, fullText) {
-  const s = String(window || "").toLowerCase();
+function scoreCandidateWindow(textWindow, fullText, dateInfo) {
+  const s = String(textWindow || "").toLowerCase();
   let score = 0;
 
-  if (s.includes("live")) score += 100;
-  if (s.includes("leaderboard")) score += 40;
-  if (s.includes("current")) score += 25;
-  if (s.includes("this week")) score += 20;
-  if (s.includes("ongoing")) score += 20;
+  score += scoreDateInfo(dateInfo, startOfUtcDay(new Date()));
+
+  if (s.includes("live")) score += 25;
+  if (s.includes("leaderboard")) score += 20;
+  if (s.includes("up next")) score += 15;
   if (s.includes("championship")) score += 6;
   if (s.includes("open")) score += 4;
   if (s.includes("classic")) score += 4;
@@ -211,19 +241,120 @@ function scoreCandidateWindow(window, fullText) {
   const year = new Date().getUTCFullYear();
   if (s.includes(String(year))) score += 8;
 
-  // Keep page order as a weak signal: candidates appearing earlier on the tournament
-  // index are usually more current or promoted.
-  const pos = fullText.indexOf(stripTags(window).slice(0, 30));
+  const pos = fullText.indexOf(textWindow.slice(0, 30));
   if (pos >= 0) score += Math.max(0, 20 - Math.floor(pos / 5000));
 
   return score;
 }
 
+function scoreDateInfo(dateInfo, today) {
+  if (!dateInfo) return 0;
+  if (dateInfo.status === "active") return 10000;
+  if (dateInfo.status === "upcoming") return Math.max(0, 1000 - Math.abs(dateInfo.daysFromToday || 0) * 20);
+  if (dateInfo.status === "recent") return Math.max(0, 500 - Math.abs(dateInfo.daysFromToday || 0) * 30);
+  if (dateInfo.status === "past") return Math.max(0, 100 - Math.abs(dateInfo.daysFromToday || 0));
+  return 0;
+}
+
+function scoreSourceUpdated(sourceUpdated, today) {
+  if (!sourceUpdated) return 0;
+  const sourceTime = Date.parse(sourceUpdated);
+  if (Number.isNaN(sourceTime)) return 0;
+
+  const sourceDay = startOfUtcDay(new Date(sourceTime));
+  const days = Math.round((sourceDay.getTime() - today.getTime()) / 86400000);
+  if (days === 0) return 1000;
+  if (days < 0 && days >= -2) return 250;
+  return 0;
+}
+
+function extractDateInfo(text, today) {
+  const s = String(text || "").replace(/\s+/g, " ");
+  const currentYear = today.getUTCFullYear();
+  const matches = [];
+
+  // Full page header: June 25-28, 2026
+  const fullMonthRegex = /\b(January|February|March|April|May|June|July|August|September|October|November|December)\s+(\d{1,2})\s*-\s*(?:(January|February|March|April|May|June|July|August|September|October|November|December)\s+)?(\d{1,2}),\s*(\d{4})\b/gi;
+  collectDateMatches(matches, s, fullMonthRegex, today, match => ({
+    startMonth: monthIndex(match[1]),
+    startDay: Number(match[2]),
+    endMonth: monthIndex(match[3] || match[1]),
+    endDay: Number(match[4]),
+    year: Number(match[5]),
+    dateText: match[0]
+  }));
+
+  // Schedule cards: Jun 25 - 28, Jul 30 - Aug 2
+  const shortMonthRegex = /\b(Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Sept|Oct|Nov|Dec)\s+(\d{1,2})\s*-\s*(?:(Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Sept|Oct|Nov|Dec)\s+)?(\d{1,2})\b/gi;
+  collectDateMatches(matches, s, shortMonthRegex, today, match => ({
+    startMonth: monthIndex(match[1]),
+    startDay: Number(match[2]),
+    endMonth: monthIndex(match[3] || match[1]),
+    endDay: Number(match[4]),
+    year: inferYearFromContext(s, match.index, currentYear),
+    dateText: match[0]
+  }));
+
+  matches.sort((a, b) => Math.abs(a.daysFromToday) - Math.abs(b.daysFromToday));
+  return matches[0] || null;
+}
+
+function collectDateMatches(matches, source, regex, today, mapper) {
+  let match;
+  while ((match = regex.exec(source))) {
+    const parsed = mapper(match);
+    if (parsed.startMonth === null || parsed.endMonth === null || !parsed.year || !parsed.startDay || !parsed.endDay) continue;
+
+    const start = new Date(Date.UTC(parsed.year, parsed.startMonth, parsed.startDay));
+    let endYear = parsed.year;
+    if (parsed.endMonth < parsed.startMonth) endYear += 1;
+    const end = new Date(Date.UTC(endYear, parsed.endMonth, parsed.endDay));
+
+    let status;
+    let daysFromToday = 0;
+    if (today >= start && today <= end) {
+      status = "active";
+      daysFromToday = 0;
+    } else if (today < start) {
+      status = "upcoming";
+      daysFromToday = Math.round((start.getTime() - today.getTime()) / 86400000);
+    } else {
+      const daysSince = Math.round((today.getTime() - end.getTime()) / 86400000);
+      status = daysSince <= 7 ? "recent" : "past";
+      daysFromToday = -daysSince;
+    }
+
+    matches.push({
+      dateText: parsed.dateText,
+      start: start.toISOString().slice(0, 10),
+      end: end.toISOString().slice(0, 10),
+      status,
+      daysFromToday
+    });
+  }
+}
+
+function inferYearFromContext(source, matchIndex, fallbackYear) {
+  const before = source.slice(Math.max(0, matchIndex - 120), matchIndex + 80);
+  const yearMatches = before.match(/\b20\d{2}\b/g);
+  if (yearMatches?.length) return Number(yearMatches[yearMatches.length - 1]);
+  return fallbackYear;
+}
+
+function monthIndex(value) {
+  const key = String(value || "").toLowerCase();
+  return Object.prototype.hasOwnProperty.call(MONTHS, key) ? MONTHS[key] : null;
+}
+
+function startOfUtcDay(date) {
+  return new Date(Date.UTC(date.getUTCFullYear(), date.getUTCMonth(), date.getUTCDate()));
+}
+
 function makeCandidateHint(window) {
-  return decodeEntities(stripTags(window))
+  return String(window || "")
     .replace(/\s+/g, " ")
     .trim()
-    .slice(0, 180);
+    .slice(0, 220);
 }
 
 function summarizeTestedCandidate(candidate) {
@@ -233,6 +364,9 @@ function summarizeTestedCandidate(candidate) {
     playersParsed: candidate.playersParsed || 0,
     sourceUpdated: candidate.sourceUpdated || null,
     eventName: candidate.eventName || null,
+    dateText: candidate.dateText || candidate.pageDateText || null,
+    dateStatus: candidate.dateStatus || candidate.pageDateStatus || null,
+    daysFromToday: typeof candidate.daysFromToday === "number" ? candidate.daysFromToday : null,
     score: candidate.score || 0,
     status: candidate.status || null,
     error: candidate.error || null

@@ -57,9 +57,9 @@ function render(data) {
     const score = p.total || '-';
     const isPending = p.live === false || String(p.status || '').toLowerCase() === 'pending';
     const subText = isPending
-      ? 'Pending live score' + (p.entryStatus ? ' • ' + p.entryStatus : '')
+      ? 'Roster-only from Entries' + (p.entryStatus ? ' • ' + p.entryStatus : '')
       : 'Today: ' + (p.today || '-');
-    const thruText = isPending ? 'Pending' : (p.thru || '-');
+    const thruText = isPending ? 'Roster only' : (p.thru || '-');
 
     return '<div class="row ' + (isPending ? 'pending-row' : '') + '">' +
       '<div class="pos">' + escapeHtml(p.pos || '-') + '</div>' +
@@ -77,7 +77,11 @@ async function loadLeaderboard() {
   statusEl.textContent = 'Refreshing…';
 
   try {
-    const response = await fetch('/api/leaderboard?ts=' + Date.now());
+    const pageParams = new URLSearchParams(window.location.search);
+    const tournamentParam = pageParams.get('tournament') || pageParams.get('slug');
+    const apiParams = new URLSearchParams({ ts: String(Date.now()) });
+    if (tournamentParam) apiParams.set('tournament', tournamentParam);
+    const response = await fetch('/api/leaderboard?' + apiParams.toString());
     const data = await response.json();
     render(data);
     statusEl.textContent = data.cached ? 'Showing cached data' : 'Auto-refresh: 60 sec';
