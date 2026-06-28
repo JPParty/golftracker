@@ -1,7 +1,7 @@
 import { parseLpgaLeaderboard } from "./lpgaParser.js";
 import { decodeEntities, stripTags } from "./utils.js";
 
-const TOOL_VERSION = "0.2.7";
+const TOOL_VERSION = "0.2.8";
 const MAX_SCRIPT_FETCHES = 18;
 const MAX_SCRIPT_BYTES = 900000;
 
@@ -148,7 +148,7 @@ async function inspectPage(target) {
   try {
     const response = await fetch(target.url, {
       headers: {
-        "user-agent": "Mozilla/5.0 GolfTracker/0.2.7 SourceDiscovery",
+        "user-agent": "Mozilla/5.0 GolfTracker/0.2.8 SourceDiscovery",
         "accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8"
       }
     });
@@ -211,7 +211,7 @@ async function inspectScript(scriptUrl) {
   try {
     const response = await fetch(scriptUrl, {
       headers: {
-        "user-agent": "Mozilla/5.0 GolfTracker/0.2.7 ScriptDiscovery",
+        "user-agent": "Mozilla/5.0 GolfTracker/0.2.8 ScriptDiscovery",
         "accept": "application/javascript,text/javascript,*/*;q=0.8"
       }
     });
@@ -536,7 +536,7 @@ export async function probeCandidateSources({ appVersion = "unknown" } = {}) {
 
 function buildProbeRequests() {
   const lpgaApiHeaders = {
-    "user-agent": "Mozilla/5.0 GolfTracker/0.2.7 SourceProbe",
+    "user-agent": "Mozilla/5.0 GolfTracker/0.2.8 SourceProbe",
     "accept": "application/json,text/plain,*/*;q=0.8",
     "content-type": "application/json",
     "authorization": PUBLIC_LPGA_API_KEY,
@@ -545,13 +545,13 @@ function buildProbeRequests() {
   };
 
   const lpgaPlainHeaders = {
-    "user-agent": "Mozilla/5.0 GolfTracker/0.2.7 SourceProbe",
+    "user-agent": "Mozilla/5.0 GolfTracker/0.2.8 SourceProbe",
     "accept": "application/json,text/plain,text/html,*/*;q=0.8",
     "referer": LPGA_LEADERBOARD
   };
 
   const kpmgHeaders = {
-    "user-agent": "Mozilla/5.0 GolfTracker/0.2.7 SourceProbe",
+    "user-agent": "Mozilla/5.0 GolfTracker/0.2.8 SourceProbe",
     "accept": "application/json,text/plain,*/*;q=0.8",
     "referer": KPMG_LEADERBOARD,
     "origin": "https://www.kpmgwomenspgachampionship.com"
@@ -935,7 +935,7 @@ async function fetchKpmgLeaderboardPage() {
   try {
     const response = await fetch(KPMG_LEADERBOARD, {
       headers: {
-        "user-agent": "Mozilla/5.0 GolfTracker/0.2.7 KpmgGraphqlProbe",
+        "user-agent": "Mozilla/5.0 GolfTracker/0.2.8 KpmgGraphqlProbe",
         "accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8"
       }
     });
@@ -997,7 +997,7 @@ function extractAttributes(tag) {
 function buildFocusedKpmgGraphqlProbes(metadata) {
   const baseEndpoint = metadata?.endpointUrls?.find(url => /graphql\/delivery\/pga\/v4\/scoring/i.test(url)) || KPMG_GRAPHQL;
   const headers = {
-    "user-agent": "Mozilla/5.0 GolfTracker/0.2.7 KpmgGraphqlProbe",
+    "user-agent": "Mozilla/5.0 GolfTracker/0.2.8 KpmgGraphqlProbe",
     "accept": "application/json,text/plain,*/*;q=0.8",
     "referer": KPMG_LEADERBOARD,
     "origin": "https://www.kpmgwomenspgachampionship.com",
@@ -1086,6 +1086,189 @@ function makeGraphqlGetUrl(endpoint, params) {
   const url = new URL(endpoint);
   for (const [key, value] of Object.entries(params || {})) {
     url.searchParams.set(key, value);
+  }
+  return url.toString();
+}
+
+
+export async function probeKpmgEventAwareDiscovery({ appVersion = "unknown" } = {}) {
+  const startedAt = new Date().toISOString();
+  const leaderboardPage = await fetchKpmgLeaderboardPage();
+  const metadata = leaderboardPage.html ? extractKpmgLeaderboardMetadata(leaderboardPage.html) : null;
+  const eventId = metadata?.leaderboardReactTags?.[0]?.attributes?.["data-event-id"] || null;
+  const endpoint = metadata?.endpointUrls?.find(url => /graphql\/delivery\/pga\/v4\/scoring/i.test(url)) || KPMG_GRAPHQL;
+
+  const probes = buildKpmgEventAwareProbes({ endpoint, eventId });
+  const results = [];
+  for (const probe of probes) {
+    results.push(await runProbe(probe));
+  }
+
+  const ranked = rankProbeResults(results);
+  const usableJson = ranked.filter(item => item.ok && item.isJson && !item.graphqlErrors?.length && (item.playerLikeObjectCount > 0 || (item.leaderboardLikePaths || []).length > 0));
+
+  return {
+    appVersion,
+    tool: "KPMG Event-Aware Source Probe",
+    toolVersion: TOOL_VERSION,
+    startedAt,
+    completedAt: new Date().toISOString(),
+    summary: {
+      leaderboardPageStatus: leaderboardPage.status,
+      leaderboardPageOk: leaderboardPage.ok,
+      endpoint,
+      eventId,
+      refreshIntervalSeconds: metadata?.leaderboardReactTags?.[0]?.attributes?.["data-refresh-interval"] || null,
+      offlineMode: metadata?.leaderboardReactTags?.[0]?.attributes?.["data-offline-mode"] || null,
+      probesRun: results.length,
+      usableJsonCandidates: usableJson.length,
+      bestCandidates: ranked.slice(0, 12).map(item => ({
+        label: item.label,
+        url: item.url,
+        method: item.method,
+        status: item.status,
+        contentType: item.contentType,
+        promiseScore: item.promiseScore,
+        reason: item.promiseReason,
+        graphqlErrors: item.graphqlErrors,
+        jsonTopKeys: item.jsonTopKeys,
+        playerLikeObjectCount: item.playerLikeObjectCount,
+        leaderboardLikePaths: item.leaderboardLikePaths?.slice?.(0, 12)
+      })),
+      note: "This probe tries the KPMG scoring endpoint with the event id from the leaderboard-react tag, plus common API/GraphQL parameter and header variants. A good result is 200 JSON with player-like objects or leaderboard-like paths and no Bad Request error."
+    },
+    metadata: {
+      leaderboardReactTags: metadata?.leaderboardReactTags || [],
+      endpointUrls: metadata?.endpointUrls || [],
+      eventId,
+      candidateUrls: metadata?.candidateUrls || [],
+      scriptUrls: metadata?.scriptUrls || [],
+      inlineHints: metadata?.inlineHints || [],
+      graphqlContexts: metadata?.graphqlContexts || []
+    },
+    usableJson,
+    rankedResults: ranked,
+    rawResults: results
+  };
+}
+
+function buildKpmgEventAwareProbes({ endpoint, eventId }) {
+  const baseHeaders = {
+    "user-agent": "Mozilla/5.0 GolfTracker/0.2.8 KpmgEventProbe",
+    "accept": "application/json,text/plain,*/*;q=0.8",
+    "referer": KPMG_LEADERBOARD,
+    "origin": "https://www.kpmgwomenspgachampionship.com",
+    "x-requested-with": "XMLHttpRequest"
+  };
+
+  const eventHeaders = eventId ? [
+    { name: "plainHeaders", headers: baseHeaders },
+    { name: "eventIdHeader", headers: { ...baseHeaders, "x-event-id": eventId } },
+    { name: "pgaEventIdHeader", headers: { ...baseHeaders, "x-pga-event-id": eventId } },
+    { name: "brightspotEventIdHeader", headers: { ...baseHeaders, "x-brightspot-event-id": eventId } }
+  ] : [{ name: "plainHeaders", headers: baseHeaders }];
+
+  const eventParamNames = [
+    "eventId", "event-id", "id", "contentId", "content-id", "tournamentId", "tournament-id", "championshipId", "championship-id", "entityId", "objectId", "uuid"
+  ];
+
+  const probes = [];
+
+  probes.push({ label: "eventProbeBareEndpoint", url: endpoint, method: "GET", headers: baseHeaders });
+
+  if (eventId) {
+    for (const param of eventParamNames) {
+      probes.push({
+        label: `eventParam_${param}`,
+        url: withParams(endpoint, { [param]: eventId }),
+        method: "GET",
+        headers: baseHeaders
+      });
+    }
+
+    for (const variant of eventHeaders.slice(1)) {
+      probes.push({
+        label: `eventHeader_${variant.name}`,
+        url: endpoint,
+        method: "GET",
+        headers: variant.headers
+      });
+    }
+
+    const variables = JSON.stringify({ eventId });
+    const queries = [
+      {
+        label: "eventGraphqlTypenameVariablesOnly",
+        params: { variables }
+      },
+      {
+        label: "eventGraphqlTypenameWithEventIdParam",
+        params: { eventId, query: "query GolfTrackerProbe { __typename }" }
+      },
+      {
+        label: "eventGraphqlEventVariableTypename",
+        params: { query: "query GolfTrackerProbe($eventId: String!) { __typename }", variables }
+      },
+      {
+        label: "eventGraphqlScoringVariable",
+        params: { query: "query GolfTrackerProbe($eventId: String!) { scoring(eventId: $eventId) { __typename } }", variables }
+      },
+      {
+        label: "eventGraphqlLeaderboardVariable",
+        params: { query: "query GolfTrackerProbe($eventId: String!) { leaderboard(eventId: $eventId) { __typename } }", variables }
+      },
+      {
+        label: "eventGraphqlTournamentVariable",
+        params: { query: "query GolfTrackerProbe($eventId: String!) { tournament(eventId: $eventId) { __typename } }", variables }
+      }
+    ];
+
+    for (const item of queries) {
+      probes.push({
+        label: item.label,
+        url: withParams(endpoint, item.params),
+        method: "GET",
+        headers: baseHeaders
+      });
+    }
+
+    const pathVariants = [
+      `${endpoint.replace(/\/$/, "")}/${encodeURIComponent(eventId)}`,
+      `${endpoint.replace(/\/$/, "")}/event/${encodeURIComponent(eventId)}`,
+      `${endpoint.replace(/\/$/, "")}/events/${encodeURIComponent(eventId)}`,
+      `${endpoint.replace(/\/$/, "")}/leaderboard/${encodeURIComponent(eventId)}`
+    ];
+    pathVariants.forEach((url, index) => probes.push({
+      label: `eventPathVariant${index + 1}`,
+      url,
+      method: "GET",
+      headers: baseHeaders
+    }));
+
+    const apiBases = [
+      "https://www.kpmgwomenspgachampionship.com/api/scoring",
+      "https://www.kpmgwomenspgachampionship.com/api/leaderboard",
+      "https://www.kpmgwomenspgachampionship.com/api/scores",
+      "https://www.kpmgwomenspgachampionship.com/api/scoreboard",
+      "https://www.kpmgwomenspgachampionship.com/scoring",
+      "https://www.kpmgwomenspgachampionship.com/leaderboard.json",
+      "https://www.kpmgwomenspgachampionship.com/leaderboard?output=json"
+    ];
+    apiBases.forEach((url, index) => probes.push({
+      label: `kpmgApiGuess${index + 1}`,
+      url: withParams(url, { eventId }),
+      method: "GET",
+      headers: baseHeaders
+    }));
+  }
+
+  return probes.slice(0, 60);
+}
+
+function withParams(base, params) {
+  const url = new URL(base);
+  for (const [key, value] of Object.entries(params || {})) {
+    if (value !== undefined && value !== null) url.searchParams.set(key, value);
   }
   return url.toString();
 }
