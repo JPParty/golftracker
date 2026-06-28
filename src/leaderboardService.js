@@ -171,7 +171,7 @@ async function fetchEspnFallback(appVersion) {
     try {
       const response = await fetch(url, {
         headers: {
-          "user-agent": "Mozilla/5.0 GolfTracker/0.3.1",
+          "user-agent": "Mozilla/5.0 GolfTracker/0.3.2",
           "accept": "application/json,text/plain,*/*"
         }
       });
@@ -262,7 +262,7 @@ function cacheAndReturn(data, now, key) {
 
 function htmlHeaders() {
   return {
-    "user-agent": "Mozilla/5.0 GolfTracker/0.3.1",
+    "user-agent": "Mozilla/5.0 GolfTracker/0.3.2",
     "accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8"
   };
 }
