@@ -413,6 +413,8 @@ Loading status...
     }
 
     function render(data) {
+updateDebugStatus(data);
+
       eventName.textContent = data.eventName || 'LPGA Leaderboard';
       lastUpdated.textContent = 'Last successful update: ' + formatTime(data.updatedAt);
 
