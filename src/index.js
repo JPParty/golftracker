@@ -361,6 +361,7 @@ const APP_HTML = `<!doctype html>
       <div class="eyebrow">GolfTracker • LPGA</div>
       <h1 id="eventName">Loading leaderboard…</h1>
       <div class="meta" id="lastUpdated">Checking for current tournament</div>
+
 <div id="debug-status" style="
     margin-top:8px;
     padding:10px;
