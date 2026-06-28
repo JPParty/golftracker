@@ -1,8 +1,8 @@
 import { getLeaderboard } from "./leaderboardService.js";
 import { renderAppHtml } from "./appHtml.js";
-import { discoverLpgaSource } from "./sourceDiscovery.js";
+import { discoverLpgaSource, probeCandidateSources } from "./sourceDiscovery.js";
 
-export const APP_VERSION = "0.2.5";
+export const APP_VERSION = "0.2.6";
 
 export default {
   async fetch(request, env, ctx) {
@@ -14,6 +14,10 @@ export default {
 
     if (url.pathname === "/debug/lpga-source") {
       return json(await discoverLpgaSource({ requestUrl: url.toString(), appVersion: APP_VERSION }));
+    }
+
+    if (url.pathname === "/debug/source-probe") {
+      return json(await probeCandidateSources({ requestUrl: url.toString(), appVersion: APP_VERSION }));
     }
 
     if (url.pathname === "/manifest.json") {

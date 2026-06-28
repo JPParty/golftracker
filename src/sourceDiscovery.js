@@ -1,7 +1,7 @@
 import { parseLpgaLeaderboard } from "./lpgaParser.js";
 import { decodeEntities, stripTags } from "./utils.js";
 
-const TOOL_VERSION = "0.2.5";
+const TOOL_VERSION = "0.2.6";
 const MAX_SCRIPT_FETCHES = 18;
 const MAX_SCRIPT_BYTES = 900000;
 
@@ -129,7 +129,7 @@ export async function discoverLpgaSource({ appVersion = "unknown" } = {}) {
       totalCandidateUrls: allCandidates.length,
       strongestCandidateUrls: strongestCandidates.length,
       strongestSignals: topSignals,
-      note: "v0.2.5 fetches LPGA/KPMG pages and JS chunks, then searches for API, GraphQL, Sitecore, leaderboard, scoring, tournament, and player-data clues."
+      note: "v0.2.6 fetches LPGA/KPMG pages and JS chunks, searches for API clues, and includes a separate /debug/source-probe endpoint for testing candidate data feeds."
     },
     strongestCandidates: strongestCandidates.slice(0, 150),
     allCandidateUrls: allCandidates.slice(0, 250),
@@ -148,7 +148,7 @@ async function inspectPage(target) {
   try {
     const response = await fetch(target.url, {
       headers: {
-        "user-agent": "Mozilla/5.0 GolfTracker/0.2.5 SourceDiscovery",
+        "user-agent": "Mozilla/5.0 GolfTracker/0.2.6 SourceDiscovery",
         "accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8"
       }
     });
@@ -211,7 +211,7 @@ async function inspectScript(scriptUrl) {
   try {
     const response = await fetch(scriptUrl, {
       headers: {
-        "user-agent": "Mozilla/5.0 GolfTracker/0.2.5 ScriptDiscovery",
+        "user-agent": "Mozilla/5.0 GolfTracker/0.2.6 ScriptDiscovery",
         "accept": "application/javascript,text/javascript,*/*;q=0.8"
       }
     });
@@ -487,4 +487,361 @@ function uniqueBy(values, keyFn) {
   }
 
   return result;
+}
+
+
+const PUBLIC_LPGA_API_KEY = "XrhRX82K3C8vRnEuLED1E076LOF60OmEQz57TaHUbU6449d2e9";
+const KPMG_GRAPHQL = "https://www.kpmgwomenspgachampionship.com/graphql/delivery/pga/v4/scoring";
+const KPMG_LEADERBOARD = "https://www.kpmgwomenspgachampionship.com/leaderboard";
+const LPGA_LEADERBOARD = "https://www.lpga.com/tournaments/kpmgwomenspgachampionship/leaderboard";
+
+export async function probeCandidateSources({ appVersion = "unknown" } = {}) {
+  const startedAt = new Date().toISOString();
+  const probes = buildProbeRequests();
+  const results = [];
+
+  for (const probe of probes) {
+    results.push(await runProbe(probe));
+  }
+
+  const ranked = rankProbeResults(results);
+
+  return {
+    appVersion,
+    tool: "LPGA/KPMG Source Probe",
+    toolVersion: TOOL_VERSION,
+    startedAt,
+    completedAt: new Date().toISOString(),
+    summary: {
+      probesRun: results.length,
+      promisingResults: ranked.filter(item => item.promiseScore > 0).length,
+      bestCandidates: ranked.slice(0, 8).map(item => ({
+        label: item.label,
+        url: item.url,
+        method: item.method,
+        status: item.status,
+        contentType: item.contentType,
+        promiseScore: item.promiseScore,
+        reason: item.promiseReason,
+        jsonTopKeys: item.jsonTopKeys,
+        textSignals: item.textSignals,
+        playerLikeObjectCount: item.playerLikeObjectCount
+      })),
+      note: "Look for status 200 JSON responses with player/leaderboard/thru/score/round signals. These are the best candidates for replacing stale ESPN as the full-field source."
+    },
+    rankedResults: ranked,
+    rawResults: results
+  };
+}
+
+function buildProbeRequests() {
+  const lpgaApiHeaders = {
+    "user-agent": "Mozilla/5.0 GolfTracker/0.2.6 SourceProbe",
+    "accept": "application/json,text/plain,*/*;q=0.8",
+    "content-type": "application/json",
+    "authorization": PUBLIC_LPGA_API_KEY,
+    "site-domain": "www.lpga.com",
+    "referer": LPGA_LEADERBOARD
+  };
+
+  const lpgaPlainHeaders = {
+    "user-agent": "Mozilla/5.0 GolfTracker/0.2.6 SourceProbe",
+    "accept": "application/json,text/plain,text/html,*/*;q=0.8",
+    "referer": LPGA_LEADERBOARD
+  };
+
+  const kpmgHeaders = {
+    "user-agent": "Mozilla/5.0 GolfTracker/0.2.6 SourceProbe",
+    "accept": "application/json,text/plain,*/*;q=0.8",
+    "referer": KPMG_LEADERBOARD,
+    "origin": "https://www.kpmgwomenspgachampionship.com"
+  };
+
+  const kpmgJsonHeaders = {
+    ...kpmgHeaders,
+    "content-type": "application/json"
+  };
+
+  const lpgaPageJsonUrls = [
+    "https://www.lpga.com/page/json?url=/tournaments/kpmgwomenspgachampionship/leaderboard",
+    "https://www.lpga.com/page/json?url=https%3A%2F%2Fwww.lpga.com%2Ftournaments%2Fkpmgwomenspgachampionship%2Fleaderboard"
+  ];
+
+  const lpgaCurrentLeaderboardUrls = [
+    "https://www.lpga.com/livescoring/currentLeaderboard",
+    "https://www.lpga.com/livescoring/currentLeaderboard?code=kpmgwomenspgachampionship&year=2026",
+    "https://www.lpga.com/livescoring/currentLeaderboard?tournamentCode=kpmgwomenspgachampionship&year=2026",
+    "https://www.lpga.com/livescoring/currentLeaderboard?tournament=kpmgwomenspgachampionship&year=2026",
+    "https://www.lpga.com/livescoring/currentLeaderboard?slug=kpmgwomenspgachampionship&year=2026"
+  ];
+
+  const lpgaOtherUrls = [
+    "https://www.lpga.com/livescoring/widget",
+    "https://www.lpga.com/livescoring/currentpairings",
+    "https://www.lpga.com/livescoring/pools",
+    "https://www.lpga.com/tournaments/results?code=kpmgwomenspgachampionship&year=2026",
+    "https://www.lpga.com/tournaments/list?year=2026",
+    "https://www.lpga.com/tournamentSelect"
+  ];
+
+  const kpmgGraphqlPosts = [
+    {
+      label: "kpmgGraphqlPostTypename",
+      body: { query: "query GolfTrackerProbe { __typename }" }
+    },
+    {
+      label: "kpmgGraphqlPostIntrospectionSmall",
+      body: { query: "query GolfTrackerProbe { __schema { queryType { name } } }" }
+    },
+    {
+      label: "kpmgGraphqlPostCommonLeaderboard",
+      body: { query: "query GolfTrackerProbe { leaderboard { position playerName total today thru } }" }
+    },
+    {
+      label: "kpmgGraphqlPostCommonScoring",
+      body: { query: "query GolfTrackerProbe { scoring { leaderboard { position playerName total today thru } } }" }
+    }
+  ];
+
+  return [
+    {
+      label: "kpmgGraphqlGet",
+      url: KPMG_GRAPHQL,
+      method: "GET",
+      headers: kpmgHeaders
+    },
+    ...kpmgGraphqlPosts.map(item => ({
+      label: item.label,
+      url: KPMG_GRAPHQL,
+      method: "POST",
+      headers: kpmgJsonHeaders,
+      body: JSON.stringify(item.body)
+    })),
+    {
+      label: "kpmgLeaderboardReactGet",
+      url: "https://www.kpmgwomenspgachampionship.com/leaderboard-react",
+      method: "GET",
+      headers: kpmgHeaders
+    },
+    {
+      label: "kpmgLeaderboardRssGet",
+      url: "https://www.kpmgwomenspgachampionship.com/leaderboard.rss",
+      method: "GET",
+      headers: kpmgHeaders
+    },
+    {
+      label: "kpmgPlayersGet",
+      url: "https://www.kpmgwomenspgachampionship.com/players",
+      method: "GET",
+      headers: kpmgHeaders
+    },
+    ...lpgaPageJsonUrls.map((url, index) => ({
+      label: `lpgaPageJson${index + 1}`,
+      url,
+      method: "GET",
+      headers: lpgaApiHeaders
+    })),
+    ...lpgaCurrentLeaderboardUrls.flatMap((url, index) => ([
+      {
+        label: `lpgaCurrentLeaderboardPlain${index + 1}`,
+        url,
+        method: "GET",
+        headers: lpgaPlainHeaders
+      },
+      {
+        label: `lpgaCurrentLeaderboardApiHeaders${index + 1}`,
+        url,
+        method: "GET",
+        headers: lpgaApiHeaders
+      }
+    ])),
+    ...lpgaOtherUrls.flatMap((url, index) => ([
+      {
+        label: `lpgaOtherPlain${index + 1}`,
+        url,
+        method: "GET",
+        headers: lpgaPlainHeaders
+      },
+      {
+        label: `lpgaOtherApiHeaders${index + 1}`,
+        url,
+        method: "GET",
+        headers: lpgaApiHeaders
+      }
+    ]))
+  ];
+}
+
+async function runProbe(probe) {
+  const startedAt = new Date().toISOString();
+  const result = {
+    label: probe.label,
+    url: probe.url,
+    method: probe.method || "GET",
+    startedAt
+  };
+
+  try {
+    const response = await fetch(probe.url, {
+      method: probe.method || "GET",
+      headers: probe.headers || {},
+      body: probe.body
+    });
+
+    result.status = response.status;
+    result.ok = response.ok;
+    result.finalUrl = response.url || probe.url;
+    result.contentType = response.headers.get("content-type") || null;
+
+    const text = await response.text();
+    result.byteLength = text.length;
+    result.bodySample = cleanSnippet(text).slice(0, 1600);
+    result.textSignals = countProbeSignals(text);
+    result.namesFound = findKnownPlayerNames(text);
+
+    const json = tryParseJson(text);
+    result.isJson = !!json;
+    if (json) {
+      result.jsonTopKeys = Array.isArray(json) ? ["<array>"] : Object.keys(json).slice(0, 30);
+      result.playerLikeObjectCount = countPlayerLikeObjects(json);
+      result.leaderboardLikePaths = findKeyPaths(json, /leaderboard|players|score|scoring|rounds|thru|position|total|today/i).slice(0, 80);
+      result.jsonSample = summarizeJson(json);
+    }
+  } catch (error) {
+    result.ok = false;
+    result.error = error.message;
+  }
+
+  result.completedAt = new Date().toISOString();
+  return result;
+}
+
+function rankProbeResults(results) {
+  return (results || [])
+    .map(item => {
+      let score = 0;
+      const reasons = [];
+      if (item.ok) {
+        score += 10;
+        reasons.push("HTTP OK");
+      }
+      if (item.isJson) {
+        score += 25;
+        reasons.push("JSON response");
+      }
+      if (item.playerLikeObjectCount > 0) {
+        score += Math.min(60, item.playerLikeObjectCount * 2);
+        reasons.push(`${item.playerLikeObjectCount} player-like objects`);
+      }
+      const signals = item.textSignals || {};
+      for (const [key, value] of Object.entries(signals)) {
+        if (value > 0) score += Math.min(10, value);
+      }
+      if ((item.namesFound || []).length) {
+        score += item.namesFound.length * 5;
+        reasons.push(`known names: ${item.namesFound.join(", ")}`);
+      }
+      if (/graphql/i.test(item.url) && item.status && item.status < 500) {
+        score += 8;
+        reasons.push("GraphQL endpoint responded");
+      }
+      if (/rss/i.test(item.url) && item.ok) {
+        score += 5;
+        reasons.push("RSS endpoint responded");
+      }
+
+      return {
+        ...item,
+        promiseScore: score,
+        promiseReason: reasons.join("; ") || "No useful signal yet"
+      };
+    })
+    .sort((a, b) => b.promiseScore - a.promiseScore);
+}
+
+function countProbeSignals(text) {
+  const terms = [
+    "leaderboard",
+    "player",
+    "players",
+    "athlete",
+    "position",
+    "thru",
+    "today",
+    "total",
+    "score",
+    "round",
+    "cut",
+    "Haeran",
+    "Ryu",
+    "Korda",
+    "Henderson"
+  ];
+  return countSignals(text, terms);
+}
+
+function findKnownPlayerNames(text) {
+  const raw = String(text || "").toLowerCase();
+  const names = [
+    "Haeran Ryu",
+    "Brooke Henderson",
+    "Nelly Korda",
+    "A Lim Kim",
+    "Jeeno Thitikul",
+    "Gaby Lopez",
+    "Allisen Corpuz"
+  ];
+  return names.filter(name => raw.includes(name.toLowerCase()));
+}
+
+function tryParseJson(text) {
+  try {
+    return JSON.parse(text);
+  } catch {
+    return null;
+  }
+}
+
+function countPlayerLikeObjects(value) {
+  let count = 0;
+  walkJson(value, (node) => {
+    if (!node || typeof node !== "object" || Array.isArray(node)) return;
+    const keys = Object.keys(node).map(key => key.toLowerCase());
+    const hasName = keys.some(key => /name|player|athlete|competitor/.test(key));
+    const hasScore = keys.some(key => /score|total|thru|position|rank|today|round/.test(key));
+    if (hasName && hasScore) count += 1;
+  });
+  return count;
+}
+
+function findKeyPaths(value, pattern) {
+  const paths = [];
+  walkJson(value, (node, path) => {
+    if (!node || typeof node !== "object") return;
+    for (const key of Object.keys(node)) {
+      if (pattern.test(key)) paths.push(path ? `${path}.${key}` : key);
+    }
+  });
+  return unique(paths);
+}
+
+function summarizeJson(value) {
+  try {
+    const serialized = JSON.stringify(value);
+    return serialized.length > 2200 ? `${serialized.slice(0, 2200)}...` : serialized;
+  } catch {
+    return null;
+  }
+}
+
+function walkJson(value, visitor, path = "", depth = 0) {
+  if (depth > 9) return;
+  visitor(value, path);
+  if (Array.isArray(value)) {
+    value.slice(0, 300).forEach((item, index) => walkJson(item, visitor, `${path}[${index}]`, depth + 1));
+  } else if (value && typeof value === "object") {
+    Object.entries(value).slice(0, 300).forEach(([key, item]) => {
+      walkJson(item, visitor, path ? `${path}.${key}` : key, depth + 1);
+    });
+  }
 }
