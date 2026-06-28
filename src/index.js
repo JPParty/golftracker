@@ -153,8 +153,10 @@ function parseLpgaLeaderboard(html) {
     });
   }
 
-  return { eventName, players };
-}
+  return { 
+    eventName, 
+    players
+};
 
 function stripTags(html) {
   return html
