@@ -2,7 +2,7 @@ import { getLeaderboard } from "./leaderboardService.js";
 import { renderAppHtml } from "./appHtml.js";
 import { discoverLpgaSource } from "./sourceDiscovery.js";
 
-export const APP_VERSION = "0.2.4";
+export const APP_VERSION = "0.2.5";
 
 export default {
   async fetch(request, env, ctx) {
