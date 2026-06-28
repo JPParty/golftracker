@@ -1,19 +1,34 @@
-# GolfTracker v1
+# GolfTracker
 
-A simple Cloudflare Worker app for a fast mobile LPGA leaderboard.
+A lightweight Cloudflare Worker app for a fast, mobile-first LPGA leaderboard.
 
-## Deploy command
+## Current release
 
-Cloudflare should use:
+v0.2.0
+
+## Deployment
+
+Cloudflare deploys this project from GitHub using:
 
 ```bash
 npx wrangler deploy
 ```
 
-## Project type
+The Worker entry point is:
 
-This is a single Cloudflare Worker. It serves both:
+```text
+src/index.js
+```
 
-- `/` - the mobile web app
-- `/api/leaderboard` - leaderboard JSON
+## File layout
 
+```text
+src/index.js              Worker entry point
+src/appHtml.js            HTML shell
+src/styles.js             CSS styles
+src/clientScript.js       Browser/client JavaScript
+src/leaderboardService.js Fetch/cache leaderboard service
+src/lpgaParser.js         LPGA HTML parser
+src/debug.js              Debug panel client code
+src/utils.js              Shared parser utilities
+```
