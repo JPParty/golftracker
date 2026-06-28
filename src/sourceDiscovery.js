@@ -1,7 +1,7 @@
 import { parseLpgaLeaderboard } from "./lpgaParser.js";
 import { decodeEntities, stripTags } from "./utils.js";
 
-const TOOL_VERSION = "0.2.6";
+const TOOL_VERSION = "0.2.7";
 const MAX_SCRIPT_FETCHES = 18;
 const MAX_SCRIPT_BYTES = 900000;
 
@@ -129,7 +129,7 @@ export async function discoverLpgaSource({ appVersion = "unknown" } = {}) {
       totalCandidateUrls: allCandidates.length,
       strongestCandidateUrls: strongestCandidates.length,
       strongestSignals: topSignals,
-      note: "v0.2.6 fetches LPGA/KPMG pages and JS chunks, searches for API clues, and includes a separate /debug/source-probe endpoint for testing candidate data feeds."
+      note: "v0.2.7 adds focused KPMG GraphQL GET probing and Brightspot leaderboard asset probing."
     },
     strongestCandidates: strongestCandidates.slice(0, 150),
     allCandidateUrls: allCandidates.slice(0, 250),
@@ -148,7 +148,7 @@ async function inspectPage(target) {
   try {
     const response = await fetch(target.url, {
       headers: {
-        "user-agent": "Mozilla/5.0 GolfTracker/0.2.6 SourceDiscovery",
+        "user-agent": "Mozilla/5.0 GolfTracker/0.2.7 SourceDiscovery",
         "accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8"
       }
     });
@@ -211,7 +211,7 @@ async function inspectScript(scriptUrl) {
   try {
     const response = await fetch(scriptUrl, {
       headers: {
-        "user-agent": "Mozilla/5.0 GolfTracker/0.2.6 ScriptDiscovery",
+        "user-agent": "Mozilla/5.0 GolfTracker/0.2.7 ScriptDiscovery",
         "accept": "application/javascript,text/javascript,*/*;q=0.8"
       }
     });
@@ -527,7 +527,7 @@ export async function probeCandidateSources({ appVersion = "unknown" } = {}) {
         textSignals: item.textSignals,
         playerLikeObjectCount: item.playerLikeObjectCount
       })),
-      note: "Look for status 200 JSON responses with player/leaderboard/thru/score/round signals. These are the best candidates for replacing stale ESPN as the full-field source."
+      note: "Look for status 200 JSON responses with player/leaderboard/thru/score/round signals. v0.2.7 also includes /debug/kpmg-graphql-probe for focused GET-query probing of the KPMG scoring endpoint."
     },
     rankedResults: ranked,
     rawResults: results
@@ -536,7 +536,7 @@ export async function probeCandidateSources({ appVersion = "unknown" } = {}) {
 
 function buildProbeRequests() {
   const lpgaApiHeaders = {
-    "user-agent": "Mozilla/5.0 GolfTracker/0.2.6 SourceProbe",
+    "user-agent": "Mozilla/5.0 GolfTracker/0.2.7 SourceProbe",
     "accept": "application/json,text/plain,*/*;q=0.8",
     "content-type": "application/json",
     "authorization": PUBLIC_LPGA_API_KEY,
@@ -545,13 +545,13 @@ function buildProbeRequests() {
   };
 
   const lpgaPlainHeaders = {
-    "user-agent": "Mozilla/5.0 GolfTracker/0.2.6 SourceProbe",
+    "user-agent": "Mozilla/5.0 GolfTracker/0.2.7 SourceProbe",
     "accept": "application/json,text/plain,text/html,*/*;q=0.8",
     "referer": LPGA_LEADERBOARD
   };
 
   const kpmgHeaders = {
-    "user-agent": "Mozilla/5.0 GolfTracker/0.2.6 SourceProbe",
+    "user-agent": "Mozilla/5.0 GolfTracker/0.2.7 SourceProbe",
     "accept": "application/json,text/plain,*/*;q=0.8",
     "referer": KPMG_LEADERBOARD,
     "origin": "https://www.kpmgwomenspgachampionship.com"
@@ -706,6 +706,11 @@ async function runProbe(probe) {
       result.playerLikeObjectCount = countPlayerLikeObjects(json);
       result.leaderboardLikePaths = findKeyPaths(json, /leaderboard|players|score|scoring|rounds|thru|position|total|today/i).slice(0, 80);
       result.jsonSample = summarizeJson(json);
+      result.graphqlErrors = Array.isArray(json.errors)
+        ? json.errors.map(error => ({ message: error.message, path: error.path, locations: error.locations })).slice(0, 10)
+        : undefined;
+      result.graphqlRootFields = extractGraphqlRootFields(json).slice(0, 120);
+      result.scoreRelatedRootFields = result.graphqlRootFields.filter(name => /leader|score|scor|player|athlete|tournament|round|pairing|tee|field/i.test(name));
     }
   } catch (error) {
     result.ok = false;
@@ -844,4 +849,243 @@ function walkJson(value, visitor, path = "", depth = 0) {
       walkJson(item, visitor, path ? `${path}.${key}` : key, depth + 1);
     });
   }
+}
+
+
+
+function extractGraphqlRootFields(json) {
+  const fields = json?.data?.__schema?.queryType?.fields;
+  if (!Array.isArray(fields)) return [];
+  return fields.map(field => field?.name).filter(Boolean);
+}
+
+export async function probeKpmgGraphqlDiscovery({ appVersion = "unknown" } = {}) {
+  const startedAt = new Date().toISOString();
+  const leaderboardPage = await fetchKpmgLeaderboardPage();
+  const metadata = leaderboardPage.html ? extractKpmgLeaderboardMetadata(leaderboardPage.html) : null;
+
+  const probes = buildFocusedKpmgGraphqlProbes(metadata);
+  const results = [];
+  for (const probe of probes) {
+    results.push(await runProbe(probe));
+  }
+
+  const ranked = rankProbeResults(results);
+  const graphqlResults = ranked.filter(item => /graphql\/delivery\/pga\/v4\/scoring/i.test(item.url));
+  const introspection = graphqlResults
+    .map(item => ({
+      label: item.label,
+      status: item.status,
+      ok: item.ok,
+      contentType: item.contentType,
+      graphqlErrors: item.graphqlErrors,
+      rootFields: item.graphqlRootFields,
+      scoreRelatedRootFields: item.scoreRelatedRootFields,
+      jsonSample: item.jsonSample,
+      bodySample: item.bodySample
+    }))
+    .filter(item => item.rootFields || item.graphqlErrors || item.jsonSample || item.bodySample)
+    .slice(0, 20);
+
+  return {
+    appVersion,
+    tool: "KPMG GraphQL GET Probe",
+    toolVersion: TOOL_VERSION,
+    startedAt,
+    completedAt: new Date().toISOString(),
+    summary: {
+      leaderboardPageStatus: leaderboardPage.status,
+      leaderboardPageOk: leaderboardPage.ok,
+      leaderboardReactTagsFound: metadata?.leaderboardReactTags?.length || 0,
+      endpointUrlsFound: metadata?.endpointUrls || [],
+      probesRun: results.length,
+      graphqlGetResponses: graphqlResults.length,
+      bestCandidates: ranked.slice(0, 10).map(item => ({
+        label: item.label,
+        url: item.url,
+        method: item.method,
+        status: item.status,
+        contentType: item.contentType,
+        promiseScore: item.promiseScore,
+        reason: item.promiseReason,
+        graphqlErrors: item.graphqlErrors,
+        scoreRelatedRootFields: item.scoreRelatedRootFields,
+        playerLikeObjectCount: item.playerLikeObjectCount
+      })),
+      note: "This focused probe tests the KPMG scoring endpoint with GraphQL GET query parameters, because bare GET returned Bad Request and POST returned MethodNotAllowed in v0.2.6."
+    },
+    leaderboardPage: {
+      requestedUrl: KPMG_LEADERBOARD,
+      status: leaderboardPage.status,
+      ok: leaderboardPage.ok,
+      finalUrl: leaderboardPage.finalUrl,
+      contentType: leaderboardPage.contentType,
+      byteLength: leaderboardPage.byteLength,
+      error: leaderboardPage.error
+    },
+    metadata,
+    introspection,
+    rankedResults: ranked,
+    rawResults: results
+  };
+}
+
+async function fetchKpmgLeaderboardPage() {
+  const result = { requestedUrl: KPMG_LEADERBOARD, fetchedAt: new Date().toISOString() };
+  try {
+    const response = await fetch(KPMG_LEADERBOARD, {
+      headers: {
+        "user-agent": "Mozilla/5.0 GolfTracker/0.2.7 KpmgGraphqlProbe",
+        "accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8"
+      }
+    });
+    result.status = response.status;
+    result.ok = response.ok;
+    result.finalUrl = response.url || KPMG_LEADERBOARD;
+    result.contentType = response.headers.get("content-type") || null;
+    const html = await response.text();
+    result.html = html;
+    result.byteLength = html.length;
+  } catch (error) {
+    result.ok = false;
+    result.error = error.message;
+  }
+  return result;
+}
+
+function extractKpmgLeaderboardMetadata(html) {
+  const raw = String(html || "");
+  const leaderboardReactTags = [];
+  const tagPattern = /<leaderboard-react\b[^>]*>/gi;
+  let match;
+  while ((match = tagPattern.exec(raw)) !== null) {
+    const tag = match[0];
+    leaderboardReactTags.push({
+      tagSnippet: cleanSnippet(tag).slice(0, 2200),
+      attributes: extractAttributes(tag)
+    });
+  }
+
+  const allAttrs = leaderboardReactTags.flatMap(item => Object.entries(item.attributes || {}));
+  const endpointUrls = unique(
+    allAttrs
+      .filter(([key]) => /endpoint|url|api|graphql|scoring/i.test(key))
+      .map(([, value]) => value)
+      .filter(value => /^https?:\/\//i.test(value))
+  );
+
+  return {
+    leaderboardReactTags,
+    endpointUrls,
+    candidateUrls: extractCandidateUrls(raw, KPMG_LEADERBOARD).slice(0, 120),
+    scriptUrls: extractTagUrls(raw, "script", "src", KPMG_LEADERBOARD).slice(0, 40),
+    inlineHints: findInlineHints(raw).slice(0, 80),
+    graphqlContexts: findTermContexts(raw, ["graphql", "data-endpoint-url", "leaderboard-react", "LeaderboardReact", "scoring"]).slice(0, 30)
+  };
+}
+
+function extractAttributes(tag) {
+  const attrs = {};
+  const attrPattern = /([A-Za-z_:][-A-Za-z0-9_:.]*)\s*=\s*("([^"]*)"|'([^']*)')/g;
+  let match;
+  while ((match = attrPattern.exec(String(tag || ""))) !== null) {
+    attrs[match[1]] = decodeEntities(match[3] ?? match[4] ?? "");
+  }
+  return attrs;
+}
+
+function buildFocusedKpmgGraphqlProbes(metadata) {
+  const baseEndpoint = metadata?.endpointUrls?.find(url => /graphql\/delivery\/pga\/v4\/scoring/i.test(url)) || KPMG_GRAPHQL;
+  const headers = {
+    "user-agent": "Mozilla/5.0 GolfTracker/0.2.7 KpmgGraphqlProbe",
+    "accept": "application/json,text/plain,*/*;q=0.8",
+    "referer": KPMG_LEADERBOARD,
+    "origin": "https://www.kpmgwomenspgachampionship.com",
+    "x-requested-with": "XMLHttpRequest"
+  };
+
+  const queries = [
+    {
+      label: "graphqlGetTypenameQueryParam",
+      query: "query GolfTrackerProbe { __typename }"
+    },
+    {
+      label: "graphqlGetTypenameNoQueryKeyword",
+      query: "{ __typename }"
+    },
+    {
+      label: "graphqlGetSchemaQueryType",
+      query: "query GolfTrackerSchemaProbe { __schema { queryType { name fields { name args { name type { kind name ofType { kind name ofType { kind name } } } } type { kind name ofType { kind name ofType { kind name } } } } } } }"
+    },
+    {
+      label: "graphqlGetCommonScoringRoot",
+      query: "query GolfTrackerScoringProbe { scoring { __typename } }"
+    },
+    {
+      label: "graphqlGetCommonLeaderboardRoot",
+      query: "query GolfTrackerLeaderboardProbe { leaderboard { __typename } }"
+    },
+    {
+      label: "graphqlGetCommonPlayersRoot",
+      query: "query GolfTrackerPlayersProbe { players { __typename } }"
+    },
+    {
+      label: "graphqlGetCommonTournamentRoot",
+      query: "query GolfTrackerTournamentProbe { tournament { __typename } }"
+    }
+  ];
+
+  const queryParamProbes = queries.flatMap(item => [
+    {
+      label: item.label,
+      url: makeGraphqlGetUrl(baseEndpoint, { query: item.query }),
+      method: "GET",
+      headers
+    },
+    {
+      label: `${item.label}WithEmptyVariables`,
+      url: makeGraphqlGetUrl(baseEndpoint, { query: item.query, variables: "{}" }),
+      method: "GET",
+      headers
+    }
+  ]);
+
+  const brightspotAssetUrls = unique([
+    "https://pgachampionship.brightspotcdn.com/leaderboard-react",
+    "https://pgachampionship.brightspotcdn.com/leaderboard-react.js",
+    "https://pgachampionship.brightspotcdn.com/leaderboard-react.min.js",
+    "https://pgachampionship.brightspotcdn.com/player-scorecard-react",
+    "https://pgachampionship.brightspotcdn.com/leaderboard-ticker-react",
+    "https://www.kpmgwomenspgachampionship.com/LeaderboardReact",
+    "https://www.kpmgwomenspgachampionship.com/leaderboard-react"
+  ]);
+
+  const assetProbes = brightspotAssetUrls.map((url, index) => ({
+    label: `brightspotLeaderboardAsset${index + 1}`,
+    url,
+    method: "GET",
+    headers: {
+      ...headers,
+      "accept": "application/javascript,text/javascript,text/html,application/json,*/*;q=0.8"
+    }
+  }));
+
+  return [
+    {
+      label: "graphqlBareGetControl",
+      url: baseEndpoint,
+      method: "GET",
+      headers
+    },
+    ...queryParamProbes,
+    ...assetProbes
+  ];
+}
+
+function makeGraphqlGetUrl(endpoint, params) {
+  const url = new URL(endpoint);
+  for (const [key, value] of Object.entries(params || {})) {
+    url.searchParams.set(key, value);
+  }
+  return url.toString();
 }

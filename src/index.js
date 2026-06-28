@@ -1,8 +1,8 @@
 import { getLeaderboard } from "./leaderboardService.js";
 import { renderAppHtml } from "./appHtml.js";
-import { discoverLpgaSource, probeCandidateSources } from "./sourceDiscovery.js";
+import { discoverLpgaSource, probeCandidateSources, probeKpmgGraphqlDiscovery } from "./sourceDiscovery.js";
 
-export const APP_VERSION = "0.2.6";
+export const APP_VERSION = "0.2.7";
 
 export default {
   async fetch(request, env, ctx) {
@@ -18,6 +18,10 @@ export default {
 
     if (url.pathname === "/debug/source-probe") {
       return json(await probeCandidateSources({ requestUrl: url.toString(), appVersion: APP_VERSION }));
+    }
+
+    if (url.pathname === "/debug/kpmg-graphql-probe") {
+      return json(await probeKpmgGraphqlDiscovery({ requestUrl: url.toString(), appVersion: APP_VERSION }));
     }
 
     if (url.pathname === "/manifest.json") {
