@@ -1,4 +1,4 @@
-const CACHE_SECONDS = 300;
+const CACHE_SECONDS = 301;
 const LPGA_URL = "https://www.lpga.com/leaderboard";
 
 let memoryCache = {
