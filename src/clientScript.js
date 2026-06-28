@@ -1,0 +1,91 @@
+import { debugClientScript } from "./debug.js";
+
+export function getClientScript({ appVersion }) {
+  return `
+const APP_VERSION = '${appVersion}';
+const rows = document.getElementById('rows');
+const eventName = document.getElementById('eventName');
+const lastUpdated = document.getElementById('lastUpdated');
+const refreshBtn = document.getElementById('refreshBtn');
+const statusEl = document.getElementById('status');
+const notice = document.getElementById('notice');
+
+let loading = false;
+
+function scoreClass(score) {
+  const s = String(score || '').trim().toUpperCase();
+  if (s === 'E' || s === 'EVEN' || s === '0') return 'even';
+  if (s.startsWith('+')) return 'over';
+  if (/^-/.test(s)) return 'under';
+  return 'even';
+}
+
+function formatTime(iso) {
+  if (!iso) return 'No successful update yet';
+  return new Date(iso).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' });
+}
+
+function escapeHtml(value) {
+  return String(value).replace(/[&<>"']/g, function(c) {
+    return ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#039;'}[c]);
+  });
+}
+
+${debugClientScript}
+
+function render(data) {
+  updateDebugStatus(data);
+
+  eventName.textContent = data.eventName || 'LPGA Leaderboard';
+  lastUpdated.textContent = 'Last successful update: ' + formatTime(data.updatedAt);
+
+  if (data.warning || data.error) {
+    notice.style.display = 'block';
+    notice.textContent = data.warning || data.error;
+  } else {
+    notice.style.display = 'none';
+  }
+
+  const players = Array.isArray(data.players) ? data.players : [];
+  if (!players.length) {
+    rows.innerHTML = '<div class="empty">No leaderboard data available yet.</div>';
+    return;
+  }
+
+  rows.innerHTML = players.map(function(p) {
+    const score = p.total || '-';
+    return '<div class="row">' +
+      '<div class="pos">' + escapeHtml(p.pos || '-') + '</div>' +
+      '<div><div class="name">' + escapeHtml(p.name || 'Unknown') + '</div><div class="sub">Today: ' + escapeHtml(p.today || '-') + '</div></div>' +
+      '<div class="thru">' + escapeHtml(p.thru || '-') + '</div>' +
+      '<div class="score ' + scoreClass(score) + '">' + escapeHtml(score) + '</div>' +
+    '</div>';
+  }).join('');
+}
+
+async function loadLeaderboard() {
+  if (loading) return;
+  loading = true;
+  refreshBtn.disabled = true;
+  statusEl.textContent = 'Refreshing…';
+
+  try {
+    const response = await fetch('/api/leaderboard?ts=' + Date.now());
+    const data = await response.json();
+    render(data);
+    statusEl.textContent = data.cached ? 'Showing cached data' : 'Auto-refresh: 60 sec';
+  } catch (error) {
+    notice.style.display = 'block';
+    notice.textContent = 'Could not load leaderboard: ' + error.message;
+    statusEl.textContent = 'Refresh failed';
+  } finally {
+    loading = false;
+    refreshBtn.disabled = false;
+  }
+}
+
+refreshBtn.addEventListener('click', loadLeaderboard);
+loadLeaderboard();
+setInterval(loadLeaderboard, 60000);
+`;
+}
