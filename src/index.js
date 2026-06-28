@@ -1,5 +1,5 @@
 const CACHE_SECONDS = 301;
-const LPGA_URL = "https://www.lpga.com/leaderboard";
+const LPGA_LEADERBOARD_URL = "https://www.lpga.com/tournaments/kpmgwomenspgachampionship/leaderboard";
 
 let memoryCache = {
   expiresAt: 0,
