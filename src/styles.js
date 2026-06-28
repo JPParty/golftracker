@@ -29,12 +29,35 @@ body {
 .eyebrow { color: var(--green); font-size: 12px; letter-spacing: .08em; text-transform: uppercase; font-weight: 700; }
 h1 { margin: 8px 0 6px; font-size: 22px; line-height: 1.15; }
 .meta { color: var(--muted); font-size: 13px; }
-.debug-panel {
+.debug-details {
   margin-top: 10px;
-  padding: 10px;
   border-radius: 12px;
   background: #111827;
   border: 1px solid var(--line);
+  overflow: hidden;
+}
+.debug-details summary {
+  list-style: none;
+  cursor: pointer;
+  color: #d1d5db;
+  font-size: 12px;
+  font-weight: 800;
+  padding: 10px;
+  user-select: none;
+}
+.debug-details summary::-webkit-details-marker { display: none; }
+.debug-details summary::before {
+  content: '▸';
+  display: inline-block;
+  margin-right: 7px;
+  color: var(--green);
+  transition: transform .15s ease;
+}
+.debug-details[open] summary::before { transform: rotate(90deg); }
+.debug-panel {
+  margin-top: 0;
+  padding: 10px;
+  border-top: 1px solid var(--line);
   color: #d1d5db;
   font-size: 12px;
   line-height: 1.5;

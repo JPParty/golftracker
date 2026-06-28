@@ -18,7 +18,10 @@ export function renderAppHtml({ appVersion }) {
       <div class="eyebrow">GolfTracker • LPGA</div>
       <h1 id="eventName">Loading leaderboard…</h1>
       <div class="meta" id="lastUpdated">Checking for current tournament</div>
-      <div id="debug-status" class="debug-panel">Loading status...</div>
+      <details class="debug-details">
+        <summary>Debug status</summary>
+        <div id="debug-status" class="debug-panel">Loading status...</div>
+      </details>
       <div class="actions">
         <button id="refreshBtn">Refresh</button>
         <div class="status" id="status">Auto-refresh: 60 sec</div>
