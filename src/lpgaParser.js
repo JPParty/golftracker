@@ -1,14 +1,23 @@
 import {
   cleanName,
   decodeEntities,
+  dedupePlayers,
   isGolfScore,
   isThruValue,
+  makePlayerId,
   normalizePosition,
+  normalizeScore,
+  normalizeStatus,
   normalizeThru,
+  sortLeaderboard,
   stripTags
 } from "./utils.js";
 
-export const LPGA_PARSER_VERSION = "v1.1";
+export const LPGA_PARSER_VERSION = "v1.2";
+
+const COUNTRY_CODES = new Set([
+  "USA", "KOR", "JPN", "AUS", "ENG", "SWE", "THA", "CAN", "CHN", "FRA", "GER", "ESP", "MEX", "NZL", "RSA", "NED", "SCO", "IRL", "ITA", "NOR", "DEN", "FIN", "TPE", "PHI", "MAS", "SIN", "COL", "BRA", "ARG", "IND"
+]);
 
 export function parseLpgaLeaderboard(html) {
   const text = decodeEntities(stripTags(html))
@@ -23,50 +32,94 @@ export function parseLpgaLeaderboard(html) {
 
   const eventName = findEventName(lines);
   const sourceUpdated = findSourceUpdated(lines);
+  const leaderboardLines = extractLeaderboardLines(lines);
+  const parsedPlayers = parseVisibleRows(leaderboardLines);
+  const players = sortLeaderboard(dedupePlayers(parsedPlayers));
+
+  return {
+    eventName,
+    sourceUpdated,
+    players,
+    isPartial: players.length > 0 && players.length < 50,
+    rawRowsSeen: players.length
+  };
+}
+
+function extractLeaderboardLines(lines) {
+  const start = lines.findIndex(line => /^POS$/i.test(line));
+  if (start === -1) return lines;
+
+  const endCandidates = [
+    lines.findIndex((line, i) => i > start && /^About Us$/i.test(line)),
+    lines.findIndex((line, i) => i > start && /^LPGA MOBILE APP$/i.test(line)),
+    lines.findIndex((line, i) => i > start && /^Copyright/i.test(line))
+  ].filter(index => index > start);
+
+  const end = endCandidates.length ? Math.min(...endCandidates) : lines.length;
+  return lines.slice(start, end);
+}
+
+function parseVisibleRows(lines) {
   const players = [];
-  const seen = new Set();
 
   for (let i = 0; i < lines.length; i++) {
     const pos = normalizePosition(lines[i]);
     if (!pos) continue;
 
-    const window = lines.slice(i + 1, i + 14);
-    const nameIndex = window.findIndex(isLikelyPlayerName);
-    if (nameIndex === -1) continue;
+    // Avoid treating movement values as positions.
+    if (isMovementLabel(lines[i - 1])) continue;
 
-    const name = cleanName(window[nameIndex]);
-    const afterName = window.slice(nameIndex + 1);
-    const scores = afterName.filter(isGolfScore).slice(0, 3);
-    const thru = afterName.find(isThruValue) || "-";
+    let cursor = i + 1;
 
-    const total = scores[0] || "-";
-    const today = scores[1] || "-";
+    if (isMovementLabel(lines[cursor])) {
+      cursor += 1;
+      if (/^\d+$/.test(String(lines[cursor] || "").trim())) cursor += 1;
+    }
+
+    while (cursor < lines.length && isNoise(lines[cursor])) cursor += 1;
+
+    const name = cleanName(lines[cursor]);
+    if (!isLikelyPlayerName(name)) continue;
+    cursor += 1;
+
+    const fields = [];
+    while (cursor < lines.length && fields.length < 8) {
+      const value = lines[cursor];
+      if (normalizePosition(value) && !isMovementLabel(lines[cursor - 1])) break;
+      if (!isNoise(value)) fields.push(value);
+      cursor += 1;
+    }
+
+    const countryIndex = fields.findIndex(value => COUNTRY_CODES.has(String(value || "").trim().toUpperCase()));
+    const afterCountry = countryIndex >= 0 ? fields.slice(countryIndex + 1) : fields;
+
+    const statusValue = afterCountry.find(isStatusValue);
+    const scoreValues = afterCountry.filter(isGolfScore).map(normalizeScore);
+    const thruValue = afterCountry.find(isThruValue) || "-";
+
+    const total = scoreValues[0] || "-";
+    const today = scoreValues[1] || "-";
 
     if (!name || total === "-") continue;
 
-    const key = `${pos}-${name}`;
-    if (seen.has(key)) continue;
-    seen.add(key);
-
-    players.push({
-      id: key.toLowerCase().replace(/[^a-z0-9]+/g, "-"),
+    const player = {
       pos,
       name,
       today,
-      thru: normalizeThru(thru),
-      total
-    });
+      thru: normalizeThru(thruValue),
+      total,
+      status: normalizeStatus(statusValue)
+    };
+
+    player.id = makePlayerId(player);
+    players.push(player);
   }
 
-  return {
-    eventName,
-    sourceUpdated,
-    players
-  };
+  return players;
 }
 
 function findEventName(lines) {
-  const ignored = new Set(["leaderboard", "schedule", "tournaments", "players", "news", "video"]);
+  const ignored = new Set(["leaderboard", "schedule", "tournaments", "players", "news", "video", "full leaderboard"]);
   const candidate = lines.find(line => {
     const lower = line.toLowerCase();
     return line.length > 8 &&
@@ -91,9 +144,27 @@ function findSourceUpdated(lines) {
 
 function isLikelyPlayerName(value) {
   const s = cleanName(value);
-  if (s.length < 4 || s.length > 45) return false;
+  if (s.length < 2 || s.length > 45) return false;
   if (/^(no change|moved up|moved down|up|down|new)$/i.test(s)) return false;
-  if (/^(today|total|thru|round|score|pos|player|country)$/i.test(s)) return false;
+  if (/^(today|total|tot|thru|round|score|pos|player|athlete|country|sponsor logo)$/i.test(s)) return false;
+  if (COUNTRY_CODES.has(s.toUpperCase())) return false;
   if (isGolfScore(s) || isThruValue(s) || normalizePosition(s)) return false;
-  return /^[A-Za-zÀ-ÖØ-öø-ÿ' .-]+$/.test(s) && /[A-Za-z]/.test(s) && s.includes(" ");
+  return /^[A-Za-zÀ-ÖØ-öø-ÿ' .-]+$/.test(s) && /[A-Za-z]/.test(s);
+}
+
+function isMovementLabel(value) {
+  return /^(up|down|no change|moved up|moved down|new)$/i.test(String(value || "").trim());
+}
+
+function isStatusValue(value) {
+  return /^(CUT|MC|MISSED CUT|MDF|WD|WITHDRAWN|DQ|DISQUALIFIED)$/i.test(String(value || "").trim());
+}
+
+function isNoise(value) {
+  const s = String(value || "").trim();
+  if (!s) return true;
+  if (/^(Image|Sponsor Logo|Clear)$/i.test(s)) return true;
+  if (/^Image:/i.test(s)) return true;
+  if (COUNTRY_CODES.has(s.toUpperCase())) return false;
+  return false;
 }
