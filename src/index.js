@@ -214,13 +214,37 @@ function isGolfScore(value) {
 
 function isThruValue(value) {
   const s = String(value).trim().toUpperCase();
-  return /^(F|FINAL|\d{1,2})$/.test(s);
+
+  // Tee time, example: 9:25 AM
+  if (/^\d{1,2}:\d{2}\s?(AM|PM)$/.test(s)) return true;
+
+  // Finished round
+  if (/^(F|FINAL)$/.test(s)) return true;
+
+  // Current hole only, 1 through 18
+  if (/^\d{1,2}$/.test(s)) {
+    const n = Number(s);
+    return n >= 1 && n <= 18;
+  }
+
+  return false;
 }
 
 function normalizeThru(value) {
   const s = String(value).trim().toUpperCase();
+
   if (s === "FINAL") return "F";
-  return s || "-";
+
+  // Keep tee times readable
+  if (/^\d{1,2}:\d{2}\s?(AM|PM)$/.test(s)) return s;
+
+  // Only show valid hole numbers
+  if (/^\d{1,2}$/.test(s)) {
+    const n = Number(s);
+    if (n >= 1 && n <= 18) return String(n);
+  }
+
+  return "-";
 }
 
 const APP_HTML = `<!doctype html>
