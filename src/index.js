@@ -1,31 +1,25 @@
 import { getLeaderboard } from "./leaderboardService.js";
 import { renderAppHtml } from "./appHtml.js";
-import { discoverLpgaSource, probeCandidateSources, probeKpmgGraphqlDiscovery, probeKpmgEventAwareDiscovery } from "./sourceDiscovery.js";
 
-export const APP_VERSION = "0.2.8";
+export const APP_VERSION = "0.3.0";
 
 export default {
   async fetch(request, env, ctx) {
     const url = new URL(request.url);
 
     if (url.pathname === "/api/leaderboard") {
-      return json(await getLeaderboard({ appVersion: APP_VERSION }));
+      return json(await getLeaderboard({
+        appVersion: APP_VERSION,
+        tournamentOverride: url.searchParams.get("tournament") || url.searchParams.get("slug") || null
+      }));
     }
 
-    if (url.pathname === "/debug/lpga-source") {
-      return json(await discoverLpgaSource({ requestUrl: url.toString(), appVersion: APP_VERSION }));
-    }
-
-    if (url.pathname === "/debug/source-probe") {
-      return json(await probeCandidateSources({ requestUrl: url.toString(), appVersion: APP_VERSION }));
-    }
-
-    if (url.pathname === "/debug/kpmg-graphql-probe") {
-      return json(await probeKpmgGraphqlDiscovery({ requestUrl: url.toString(), appVersion: APP_VERSION }));
-    }
-
-    if (url.pathname === "/debug/kpmg-event-probe") {
-      return json(await probeKpmgEventAwareDiscovery({ requestUrl: url.toString(), appVersion: APP_VERSION }));
+    if (url.pathname === "/api/tournament") {
+      return json(await getLeaderboard({
+        appVersion: APP_VERSION,
+        tournamentOverride: url.searchParams.get("tournament") || url.searchParams.get("slug") || null,
+        metadataOnly: true
+      }));
     }
 
     if (url.pathname === "/manifest.json") {

@@ -79,6 +79,7 @@ export function isThruValue(value) {
 export function normalizeThru(value) {
   const s = String(value || "").trim().toUpperCase();
 
+  if (s === "PENDING") return "Pending";
   if (s === "FINAL") return "F";
   if (s === "F") return "F";
 
@@ -97,6 +98,7 @@ export function normalizeThru(value) {
 export function normalizeStatus(value) {
   const s = String(value || "").trim().toUpperCase();
   if (!s) return "active";
+  if (/^(PENDING|ROSTER|ENTRY|ENTERED|NO LIVE DATA)$/.test(s)) return "pending";
   if (/^(CUT|MC|MISSED CUT|MDF)$/.test(s)) return "cut";
   if (/^(WD|WITHDRAWN)$/.test(s)) return "withdrawn";
   if (/^(DQ|DISQUALIFIED)$/.test(s)) return "disqualified";
@@ -106,12 +108,14 @@ export function normalizeStatus(value) {
 export function statusSortRank(player) {
   const status = normalizeStatus(player?.status);
   if (status === "active") return 0;
-  if (status === "cut") return 1;
-  return 2;
+  if (status === "pending") return 1;
+  if (status === "cut") return 2;
+  return 3;
 }
 
 export function playerQualityScore(player) {
   let score = 0;
+  if (player?.live) score += 20;
   if (player?.pos && player.pos !== "-") score += 2;
   if (player?.name && player.name !== "Unknown") score += 4;
   if (player?.total && player.total !== "-") score += 4;
@@ -125,17 +129,39 @@ export function dedupePlayers(players) {
   const map = new Map();
 
   for (const player of players || []) {
-    const key = String(player?.name || "")
-      .toLowerCase()
-      .replace(/[^a-z0-9]+/g, "")
-      .trim();
-
+    const key = playerNameKey(player?.name);
     if (!key) continue;
 
     const existing = map.get(key);
     if (!existing || playerQualityScore(player) > playerQualityScore(existing)) {
       map.set(key, player);
     }
+  }
+
+  return Array.from(map.values());
+}
+
+export function mergePlayers(primaryPlayers, secondaryPlayers) {
+  const map = new Map();
+
+  for (const player of secondaryPlayers || []) {
+    const key = playerNameKey(player?.name);
+    if (key) map.set(key, player);
+  }
+
+  for (const player of primaryPlayers || []) {
+    const key = playerNameKey(player?.name);
+    if (!key) continue;
+
+    const existing = map.get(key);
+    map.set(key, {
+      ...(existing || {}),
+      ...player,
+      live: true,
+      dataSource: player.dataSource || "LPGA Leaderboard",
+      entryStatus: existing?.entryStatus || player.entryStatus || null,
+      entryNumber: existing?.entryNumber || player.entryNumber || null
+    });
   }
 
   return Array.from(map.values());
@@ -152,6 +178,9 @@ export function sortLeaderboard(players) {
     const posDiff = positionNumber(a.pos) - positionNumber(b.pos);
     if (posDiff) return posDiff;
 
+    const entryDiff = (a.entryNumber || Number.POSITIVE_INFINITY) - (b.entryNumber || Number.POSITIVE_INFINITY);
+    if (entryDiff) return entryDiff;
+
     return String(a.name || "").localeCompare(String(b.name || ""));
   });
 }
@@ -161,4 +190,11 @@ export function makePlayerId(player) {
     .toLowerCase()
     .replace(/[^a-z0-9]+/g, "-")
     .replace(/^-+|-+$/g, "");
+}
+
+export function playerNameKey(name) {
+  return String(name || "")
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "")
+    .trim();
 }

@@ -14,6 +14,7 @@ let loading = false;
 
 function scoreClass(score) {
   const s = String(score || '').trim().toUpperCase();
+  if (s === '-' || s === '') return 'even';
   if (s === 'E' || s === 'EVEN' || s === '0') return 'even';
   if (s.startsWith('+')) return 'over';
   if (/^-/.test(s)) return 'under';
@@ -54,10 +55,16 @@ function render(data) {
 
   rows.innerHTML = players.map(function(p) {
     const score = p.total || '-';
-    return '<div class="row">' +
+    const isPending = p.live === false || String(p.status || '').toLowerCase() === 'pending';
+    const subText = isPending
+      ? 'Pending live score' + (p.entryStatus ? ' • ' + p.entryStatus : '')
+      : 'Today: ' + (p.today || '-');
+    const thruText = isPending ? 'Pending' : (p.thru || '-');
+
+    return '<div class="row ' + (isPending ? 'pending-row' : '') + '">' +
       '<div class="pos">' + escapeHtml(p.pos || '-') + '</div>' +
-      '<div><div class="name">' + escapeHtml(p.name || 'Unknown') + '</div><div class="sub">Today: ' + escapeHtml(p.today || '-') + '</div></div>' +
-      '<div class="thru">' + escapeHtml(p.thru || '-') + '</div>' +
+      '<div><div class="name">' + escapeHtml(p.name || 'Unknown') + '</div><div class="sub">' + escapeHtml(subText) + '</div></div>' +
+      '<div class="thru">' + escapeHtml(thruText) + '</div>' +
       '<div class="score ' + scoreClass(score) + '">' + escapeHtml(score) + '</div>' +
     '</div>';
   }).join('');
