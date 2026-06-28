@@ -3,6 +3,7 @@ import { LPGA_PARSER_VERSION, parseLpgaLeaderboard } from "./lpgaParser.js";
 
 const CACHE_SECONDS = 60;
 const MIN_EXPECTED_FULL_FIELD = 50;
+const ESPN_MAX_SOURCE_AGE_MS = 30 * 60 * 1000;
 const LPGA_URL = "https://www.lpga.com/tournaments/kpmgwomenspgachampionship/leaderboard";
 const ESPN_URLS = [
   "https://site.web.api.espn.com/apis/site/v2/sports/golf/lpga/scoreboard",
@@ -123,6 +124,12 @@ async function fetchEspnFallback(appVersion) {
       const parsed = parseEspnLeaderboard(json);
 
       if (parsed.players.length) {
+        const staleReason = getEspnStaleReason(parsed.sourceUpdated);
+        if (staleReason) {
+          lastError = new Error(`ESPN fallback rejected: ${staleReason}`);
+          continue;
+        }
+
         return {
           appVersion,
           source: "ESPN (fallback)",
@@ -143,6 +150,23 @@ async function fetchEspnFallback(appVersion) {
   }
 
   throw lastError || new Error("ESPN fallback failed");
+}
+
+function getEspnStaleReason(sourceUpdated) {
+  if (!sourceUpdated) return "sourceUpdated missing";
+
+  const sourceTime = Date.parse(sourceUpdated);
+  if (Number.isNaN(sourceTime)) return `sourceUpdated not parseable (${sourceUpdated})`;
+
+  const ageMs = Date.now() - sourceTime;
+  if (ageMs < 0) return null;
+
+  if (ageMs > ESPN_MAX_SOURCE_AGE_MS) {
+    const ageMinutes = Math.round(ageMs / 60000);
+    return `sourceUpdated is ${ageMinutes} minutes old, exceeding 30-minute limit`;
+  }
+
+  return null;
 }
 
 function cacheAndReturn(data, now) {
