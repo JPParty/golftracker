@@ -361,6 +361,17 @@ const APP_HTML = `<!doctype html>
       <div class="eyebrow">GolfTracker • LPGA</div>
       <h1 id="eventName">Loading leaderboard…</h1>
       <div class="meta" id="lastUpdated">Checking for current tournament</div>
+<div id="debug-status" style="
+    margin-top:8px;
+    padding:10px;
+    border-radius:8px;
+    background:#1f2937;
+    color:#d1d5db;
+    font-size:13px;
+    line-height:1.5;
+">
+Loading status...
+</div>
       <div class="actions">
         <button id="refreshBtn">Refresh</button>
         <div class="status" id="status">Auto-refresh: 60 sec</div>
