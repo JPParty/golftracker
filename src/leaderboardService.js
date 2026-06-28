@@ -79,7 +79,7 @@ export async function getLeaderboard({ appVersion = "unknown" } = {}) {
 async function fetchLpga(appVersion) {
   const response = await fetch(LPGA_URL, {
     headers: {
-      "user-agent": "Mozilla/5.0 GolfTracker/0.2.1",
+      "user-agent": "Mozilla/5.0 GolfTracker/0.2.3",
       "accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8"
     }
   });
@@ -111,7 +111,7 @@ async function fetchEspnFallback(appVersion) {
     try {
       const response = await fetch(url, {
         headers: {
-          "user-agent": "Mozilla/5.0 GolfTracker/0.2.1",
+          "user-agent": "Mozilla/5.0 GolfTracker/0.2.3",
           "accept": "application/json,text/plain,*/*"
         }
       });

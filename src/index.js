@@ -1,7 +1,7 @@
 import { getLeaderboard } from "./leaderboardService.js";
 import { renderAppHtml } from "./appHtml.js";
 
-export const APP_VERSION = "0.2.1";
+export const APP_VERSION = "0.2.3";
 
 export default {
   async fetch(request, env, ctx) {

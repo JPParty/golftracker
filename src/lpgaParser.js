@@ -13,7 +13,7 @@ import {
   stripTags
 } from "./utils.js";
 
-export const LPGA_PARSER_VERSION = "v1.2";
+export const LPGA_PARSER_VERSION = "v1.3";
 
 const COUNTRY_CODES = new Set([
   "USA", "KOR", "JPN", "AUS", "ENG", "SWE", "THA", "CAN", "CHN", "FRA", "GER", "ESP", "MEX", "NZL", "RSA", "NED", "SCO", "IRL", "ITA", "NOR", "DEN", "FIN", "TPE", "PHI", "MAS", "SIN", "COL", "BRA", "ARG", "IND"
@@ -85,7 +85,7 @@ function parseVisibleRows(lines) {
     const fields = [];
     while (cursor < lines.length && fields.length < 8) {
       const value = lines[cursor];
-      if (normalizePosition(value) && !isMovementLabel(lines[cursor - 1])) break;
+      if (isRowBoundary(lines, cursor)) break;
       if (!isNoise(value)) fields.push(value);
       cursor += 1;
     }
@@ -93,12 +93,11 @@ function parseVisibleRows(lines) {
     const countryIndex = fields.findIndex(value => COUNTRY_CODES.has(String(value || "").trim().toUpperCase()));
     const afterCountry = countryIndex >= 0 ? fields.slice(countryIndex + 1) : fields;
 
-    const statusValue = afterCountry.find(isStatusValue);
-    const scoreValues = afterCountry.filter(isGolfScore).map(normalizeScore);
-    const thruValue = afterCountry.find(isThruValue) || "-";
-
-    const total = scoreValues[0] || "-";
-    const today = scoreValues[1] || "-";
+    const scoring = parseScoringFields(afterCountry);
+    const total = scoring.total;
+    const today = scoring.today;
+    const thru = scoring.thru;
+    const statusValue = scoring.status;
 
     if (!name || total === "-") continue;
 
@@ -106,7 +105,7 @@ function parseVisibleRows(lines) {
       pos,
       name,
       today,
-      thru: normalizeThru(thruValue),
+      thru,
       total,
       status: normalizeStatus(statusValue)
     };
@@ -116,6 +115,73 @@ function parseVisibleRows(lines) {
   }
 
   return players;
+}
+
+function isRowBoundary(lines, index) {
+  const current = lines[index];
+  if (!normalizePosition(current)) return false;
+  if (isMovementLabel(lines[index - 1])) return false;
+
+  const next = lines[index + 1];
+  if (isMovementLabel(next)) return true;
+  if (isLikelyPlayerName(next)) return true;
+
+  return false;
+}
+
+function parseScoringFields(values) {
+  const cleaned = (values || [])
+    .map(value => String(value || "").trim())
+    .filter(value => value && !isNoise(value));
+
+  const status = cleaned.find(isStatusValue) || null;
+  const usable = cleaned.filter(value => !isStatusValue(value));
+
+  let total = "-";
+  let today = "-";
+  let thru = "-";
+
+  // LPGA visible row order is normally:
+  // country, optional sponsor logo, TOT, TODAY, THRU.
+  // THRU can be a hole number like 8 or 16*, which also looks like a score.
+  // Therefore we must not simply filter all numeric values as scores.
+  const totalIndex = usable.findIndex(isGolfScore);
+  if (totalIndex === -1) return { total, today, thru, status };
+
+  total = normalizeScore(usable[totalIndex]);
+
+  for (let i = totalIndex + 1; i < usable.length; i++) {
+    const value = usable[i];
+    const normalized = String(value || "").trim().toUpperCase();
+
+    if (today === "-" && isRoundScoreValue(normalized)) {
+      today = normalizeRoundScore(normalized);
+      continue;
+    }
+
+    if (isThruValue(normalized)) {
+      thru = normalizeThru(normalized);
+      break;
+    }
+  }
+
+  return { total, today, thru, status };
+}
+
+function isRoundScoreValue(value) {
+  const s = String(value || "").trim().toUpperCase();
+  if (s === "-" || s === "E" || s === "EVEN") return true;
+
+  // Round scores from LPGA are typically signed when over/under par.
+  // Unsigned numbers after TODAY are much more likely to be THRU/hole values.
+  return /^[+-]\d{1,2}$/.test(s);
+}
+
+function normalizeRoundScore(value) {
+  const s = String(value || "").trim().toUpperCase();
+  if (s === "EVEN" || s === "0") return "E";
+  if (s === "-") return "-";
+  return normalizeScore(s);
 }
 
 function findEventName(lines) {
