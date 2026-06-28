@@ -201,6 +201,7 @@ function cleanName(value) {
 function isLikelyPlayerName(value) {
   const s = cleanName(value);
   if (s.length < 4 || s.length > 45) return false;
+  if (/^(no change|moved up|moved down|up|down|new)$/i.test(s)) return false;
   if (/^(today|total|thru|round|score|pos|player|country)$/i.test(s)) return false;
   if (isGolfScore(s) || isThruValue(s) || normalizePosition(s)) return false;
   return /^[A-Za-zÀ-ÖØ-öø-ÿ' .-]+$/.test(s) && /[A-Za-z]/.test(s) && s.includes(" ");
