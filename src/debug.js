@@ -26,7 +26,11 @@ function updateDebugStatus(data) {
     '<b>Cache:</b> ' + escapeHtml(cacheText) + '<br>' +
     '<b>Players Loaded:</b> ' + players.length + '<br>' +
     '<b>Live Scored Players:</b> ' + escapeHtml(data.livePlayersLoaded ?? 'Unknown') + '<br>' +
+    (data.visibleLivePlayersLoaded !== undefined ? '<b>Visible HTML Players:</b> ' + escapeHtml(data.visibleLivePlayersLoaded) + '<br>' : '') +
+    (data.hydratedPlayersLoaded !== undefined ? '<b>Hydration Players:</b> ' + escapeHtml(data.hydratedPlayersLoaded) + '<br>' : '') +
+    (data.hydratedRowsSeen !== undefined && data.hydratedRowsSeen !== null ? '<b>Hydration Rows Seen:</b> ' + escapeHtml(data.hydratedRowsSeen) + '<br>' : '') +
     '<b>Roster Players:</b> ' + escapeHtml(data.rosterPlayersLoaded ?? 'Unknown') + '<br>' +
+    (data.entriesRowsFiltered ? '<b>Filtered Entry Rows:</b> ' + escapeHtml(data.entriesRowsFiltered) + '<br>' : '') +
     '<b>Parser:</b> ' + escapeHtml(data.parser || 'Unknown') +
     (data.warning || data.error ? '<br><b>Message:</b> ' + escapeHtml(data.warning || data.error) : '');
 }

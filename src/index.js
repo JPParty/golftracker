@@ -1,9 +1,7 @@
 import { getLeaderboard } from "./leaderboardService.js";
-import { runLpgaPopulationProbe } from "./lpgaPopulationProbe.js";
-import { runLpgaHydrationProbe } from "./lpgaHydrationProbe.js";
 import { renderAppHtml } from "./appHtml.js";
 
-export const APP_VERSION = "0.3.4";
+export const APP_VERSION = "0.3.5";
 
 export default {
   async fetch(request, env, ctx) {
@@ -21,22 +19,6 @@ export default {
         appVersion: APP_VERSION,
         tournamentOverride: url.searchParams.get("tournament") || url.searchParams.get("slug") || null,
         metadataOnly: true
-      }));
-    }
-
-
-    if (url.pathname === "/debug/lpga-population-probe") {
-      return json(await runLpgaPopulationProbe({
-        appVersion: APP_VERSION,
-        tournamentOverride: url.searchParams.get("tournament") || url.searchParams.get("slug") || null,
-        delaysParam: url.searchParams.get("delays")
-      }));
-    }
-
-    if (url.pathname === "/debug/lpga-hydration-probe") {
-      return json(await runLpgaHydrationProbe({
-        appVersion: APP_VERSION,
-        tournamentOverride: url.searchParams.get("tournament") || url.searchParams.get("slug") || null
       }));
     }
 

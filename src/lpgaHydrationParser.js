@@ -12,7 +12,7 @@ import {
   sortLeaderboard
 } from "./utils.js";
 
-export const LPGA_HYDRATION_PARSER_VERSION = "v0.2-debug";
+export const LPGA_HYDRATION_PARSER_VERSION = "v0.3";
 
 const MAX_PATHS_PER_ENTRY = 80;
 
@@ -208,8 +208,13 @@ function normalizeFormattedLeaderboardRow(row) {
 
   if (!isLikelyName(name)) return null;
 
+  const entryId = athleteCell?.entryId || player.entryId || null;
+  const playerId = athleteCell?.playerId || player.playerId || null;
+  if (!entryId && !playerId) return null;
+
   const posRaw = positionCell?.positions?.[0]?.position ?? positionCell?.position ?? positionCell?.value ?? positionCell?.text ?? "-";
   const numericCells = row.slice(Math.max(athleteIndex + 1, 0)).filter(cell => cell && typeof cell === "object" && cell.value !== undefined);
+  if (numericCells.length < 3) return null;
 
   const total = scoreOrDash(numericCells[0]?.value);
   const today = scoreOrDash(numericCells[1]?.value);
@@ -225,8 +230,8 @@ function normalizeFormattedLeaderboardRow(row) {
     status,
     live: status === "active" || status === "cut",
     dataSource: "LPGA Hydration formattedLeaderboard",
-    entryId: athleteCell?.entryId || player.entryId || null,
-    playerId: athleteCell?.playerId || player.playerId || null,
+    entryId,
+    playerId,
     tournamentId: athleteCell?.tournamentId || null,
     roundNum: athleteCell?.roundNum || null
   };
@@ -312,8 +317,40 @@ function scoreOrDash(value) {
 }
 
 function isLikelyName(value) {
-  const key = playerNameKey(value);
-  return key.length >= 3 && /[a-z]/i.test(value);
+  const s = cleanName(value);
+  const key = playerNameKey(s);
+  if (key.length < 3 || !/[a-z]/i.test(s)) return false;
+  if (s.length > 70) return false;
+  if (/https?:\/\//i.test(s) || /www\./i.test(s) || /\.com\b/i.test(s)) return false;
+  if (/[{}<>]/.test(s)) return false;
+
+  const normalized = s.toLowerCase().replace(/[^a-z0-9]+/g, " ").trim();
+  const blockedPhrases = [
+    "advertisement",
+    "advertising",
+    "sponsor logo",
+    "official partner",
+    "official partners",
+    "privacy policy",
+    "cookie settings",
+    "do not sell",
+    "terms of use",
+    "california privacy notice",
+    "newsletter",
+    "subscribe",
+    "leaderboard",
+    "full leaderboard",
+    "lpga professionals",
+    "tickets",
+    "volunteer",
+    "hospitality",
+    "watch now",
+    "view more",
+    "learn more"
+  ];
+
+  if (blockedPhrases.some(phrase => normalized.includes(phrase))) return false;
+  return true;
 }
 
 function firstFormattedTournamentId(rows) {
