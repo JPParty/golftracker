@@ -12,7 +12,7 @@ import {
   sortLeaderboard
 } from "./utils.js";
 
-export const LPGA_HYDRATION_PARSER_VERSION = "v0.1-debug";
+export const LPGA_HYDRATION_PARSER_VERSION = "v0.2-debug";
 
 const MAX_PATHS_PER_ENTRY = 80;
 
@@ -22,7 +22,7 @@ export function parseLpgaHydration(html) {
   const contextData = extractObjectAfterMarker(normalized, '"contextData":');
   const formattedLeaderboard = extractObjectAfterMarker(normalized, '"formattedLeaderboard":');
 
-  const result = currentLeaderboard?.result || null;
+  const result = currentLeaderboard && !currentLeaderboard._parseError ? currentLeaderboard.result || null : null;
   const entries = Array.isArray(result?.entries) ? result.entries : [];
   const currentRound = Number(
     result?.currentRound ||
@@ -33,9 +33,17 @@ export function parseLpgaHydration(html) {
     0
   ) || null;
 
-  const players = sortLeaderboard(dedupePlayers(
-    entries.map(entry => normalizeHydratedEntry(entry, { currentRound })).filter(Boolean)
-  ));
+  const entryPlayers = entries.map(entry => normalizeHydratedEntry(entry, { currentRound })).filter(Boolean);
+  const formattedRows = Array.isArray(formattedLeaderboard?.leaderboardRows) ? formattedLeaderboard.leaderboardRows : [];
+  const formattedPlayers = formattedRows.map(row => normalizeFormattedLeaderboardRow(row)).filter(Boolean);
+
+  const bestPlayers = formattedPlayers.length >= entryPlayers.length ? formattedPlayers : entryPlayers;
+  const players = sortLeaderboard(dedupePlayers(bestPlayers));
+  const parseSource = formattedPlayers.length >= entryPlayers.length && formattedPlayers.length > 0
+    ? "formattedLeaderboard.leaderboardRows"
+    : entries.length > 0
+      ? "currentLeaderboard.result.entries"
+      : "none";
 
   return {
     parserVersion: LPGA_HYDRATION_PARSER_VERSION,
@@ -43,16 +51,21 @@ export function parseLpgaHydration(html) {
     foundContextData: Boolean(contextData),
     foundFormattedLeaderboard: Boolean(formattedLeaderboard),
     currentRound,
-    tournamentId: result?.tournament?.tournamentId || result?.tournamentId || contextData?.tournamentId || null,
+    tournamentId: result?.tournament?.tournamentId || result?.tournamentId || contextData?.tournamentId || firstFormattedTournamentId(formattedRows) || null,
     tournamentCode: result?.tournament?.tournamentCode || result?.tournamentCode || contextData?.tournamenCode || contextData?.tournamentCode || null,
     tournamentStatus: result?.tournament?.tournamentStatus || contextData?.tournamentStatus || null,
     entriesCount: entries.length,
+    formattedRowsCount: formattedRows.length,
+    parsedEntriesCount: entryPlayers.length,
+    parsedFormattedRowsCount: formattedPlayers.length,
     parsedPlayersCount: players.length,
+    parseSource,
     players,
-    playerSample: players.slice(0, 20),
+    playerSample: players.slice(0, 25),
     rawEntrySamples: entries.slice(0, 3).map(entry => summarizeEntry(entry)),
+    formattedRowSamples: formattedRows.slice(0, 5).map(row => summarizeFormattedRow(row)),
     formattedLeaderboardSummary: summarizeFormattedLeaderboard(formattedLeaderboard),
-    extractionNotes: buildExtractionNotes({ currentLeaderboard, entries, players })
+    extractionNotes: buildExtractionNotes({ currentLeaderboard, entries, formattedLeaderboard, formattedRows, entryPlayers, formattedPlayers, players, parseSource })
   };
 }
 
@@ -138,7 +151,8 @@ function normalizeHydratedEntry(entry, { currentRound } = {}) {
   if (!isLikelyName(name)) return null;
 
   const round = findCurrentRound(entry, currentRound);
-  const pos = normalizePosition(firstValue(entry, ["position", "currentPosition", "rank", "startRank"])) || "-";
+  const posRaw = firstValue(entry, ["position", "currentPosition", "rank", "startRank"]);
+  const pos = normalizeDisplayPosition(posRaw);
   const total = scoreOrDash(
     firstDirect(entry, ["totalToPar", "totalToParScore", "overallToPar", "aggregateToPar", "toPar", "total", "scoreToPar"]) ??
     firstValue(entry, ["totalToPar", "totalToParScore", "overallToPar", "aggregateToPar", "total", "scoreToPar"])
@@ -154,7 +168,8 @@ function normalizeHydratedEntry(entry, { currentRound } = {}) {
 
   const status = normalizeStatus(
     firstDirect(entry, ["status", "statusText", "statusName", "tournamentStatus", "entryStatus"]) ||
-    firstDirect(round, ["status", "statusText", "statusName"])
+    firstDirect(round, ["status", "statusText", "statusName"]) ||
+    statusFromPosition(posRaw)
   );
 
   const normalized = {
@@ -172,6 +187,69 @@ function normalizeHydratedEntry(entry, { currentRound } = {}) {
 
   normalized.id = makePlayerId(normalized);
   return normalized;
+}
+
+function normalizeFormattedLeaderboardRow(row) {
+  if (!Array.isArray(row) || row.length < 3) return null;
+
+  const positionCell = row.find(cell => cell && typeof cell === "object" && (cell.type === "position" || Array.isArray(cell.positions)));
+  const athleteIndex = row.findIndex(cell => cell && typeof cell === "object" && (cell.type === "athlete" || Array.isArray(cell.players)));
+  const athleteCell = athleteIndex >= 0 ? row[athleteIndex] : null;
+  const player = athleteCell?.players?.[0] || athleteCell?.player || {};
+  const name = cleanName(
+    player.name ||
+    player.shortName ||
+    player.displayName ||
+    player.fullName ||
+    [player.firstName, player.lastName].filter(Boolean).join(" ") ||
+    athleteCell?.name ||
+    athleteCell?.shortName
+  );
+
+  if (!isLikelyName(name)) return null;
+
+  const posRaw = positionCell?.positions?.[0]?.position ?? positionCell?.position ?? positionCell?.value ?? positionCell?.text ?? "-";
+  const numericCells = row.slice(Math.max(athleteIndex + 1, 0)).filter(cell => cell && typeof cell === "object" && cell.value !== undefined);
+
+  const total = scoreOrDash(numericCells[0]?.value);
+  const today = scoreOrDash(numericCells[1]?.value);
+  const thru = normalizeThru(numericCells[2]?.value);
+  const status = normalizeStatus(statusFromPosition(posRaw) || (thru === "Pending" ? "pending" : "active"));
+
+  const normalized = {
+    pos: normalizeDisplayPosition(posRaw),
+    name,
+    today,
+    thru,
+    total,
+    status,
+    live: status === "active" || status === "cut",
+    dataSource: "LPGA Hydration formattedLeaderboard",
+    entryId: athleteCell?.entryId || player.entryId || null,
+    playerId: athleteCell?.playerId || player.playerId || null,
+    tournamentId: athleteCell?.tournamentId || null,
+    roundNum: athleteCell?.roundNum || null
+  };
+
+  normalized.id = makePlayerId(normalized);
+  return normalized;
+}
+
+function normalizeDisplayPosition(value) {
+  const raw = String(value ?? "").trim().toUpperCase();
+  if (!raw || raw === "-") return "-";
+  const normalized = normalizePosition(raw);
+  if (normalized) return normalized;
+  if (/^(CUT|MC|MDF|WD|DQ|DNS)$/.test(raw)) return raw;
+  return raw.length <= 8 ? raw : "-";
+}
+
+function statusFromPosition(value) {
+  const raw = String(value ?? "").trim().toUpperCase();
+  if (/^(CUT|MC|MDF)$/.test(raw)) return "cut";
+  if (/^(WD|DNS)$/.test(raw)) return "withdrawn";
+  if (/^DQ$/.test(raw)) return "disqualified";
+  return null;
 }
 
 function findCurrentRound(entry, currentRound) {
@@ -238,12 +316,33 @@ function isLikelyName(value) {
   return key.length >= 3 && /[a-z]/i.test(value);
 }
 
+function firstFormattedTournamentId(rows) {
+  for (const row of rows || []) {
+    if (!Array.isArray(row)) continue;
+    const athleteCell = row.find(cell => cell && typeof cell === "object" && (cell.type === "athlete" || Array.isArray(cell.players)));
+    if (athleteCell?.tournamentId) return athleteCell.tournamentId;
+  }
+  return null;
+}
+
 function summarizeEntry(entry) {
   return {
     shallowKeys: Object.keys(entry || {}).slice(0, 80),
     playerKeys: Object.keys(entry?.player || {}).slice(0, 80),
     roundKeys: Array.isArray(entry?.rounds) && entry.rounds[0] ? Object.keys(entry.rounds[0]).slice(0, 80) : [],
     scoreLikePaths: collectInterestingPaths(entry, /score|topar|total|today|thru|hole|position|rank|round|status|strokes|par/i).slice(0, MAX_PATHS_PER_ENTRY)
+  };
+}
+
+function summarizeFormattedRow(row) {
+  if (!Array.isArray(row)) return { kind: typeof row };
+
+  return {
+    cellTypes: row.map(cell => cell?.type || null).slice(0, 20),
+    position: row.find(cell => cell?.type === "position")?.positions?.[0]?.position || null,
+    athleteName: row.find(cell => cell?.type === "athlete")?.players?.[0]?.name || null,
+    numericValues: row.filter(cell => cell && cell.value !== undefined).map(cell => cell.value).slice(0, 12),
+    parsed: normalizeFormattedLeaderboardRow(row)
   };
 }
 
@@ -291,10 +390,21 @@ function collectInterestingPaths(obj, keyRegex, maxDepth = 5) {
   return paths;
 }
 
-function buildExtractionNotes({ currentLeaderboard, entries, players }) {
-  if (!currentLeaderboard) return "No currentLeaderboard object was extracted from the Next.js flight data.";
-  if (currentLeaderboard._parseError) return `Found currentLeaderboard marker but JSON extraction failed: ${currentLeaderboard._parseError}`;
-  if (!entries.length) return "currentLeaderboard was extracted, but result.entries was not found or was empty.";
-  if (!players.length) return "currentLeaderboard.result.entries was found, but player normalization did not produce rows yet. Inspect rawEntrySamples.";
-  return "currentLeaderboard.result.entries was extracted and normalized into candidate live rows.";
+function buildExtractionNotes({ currentLeaderboard, entries, formattedLeaderboard, formattedRows, entryPlayers, formattedPlayers, players, parseSource }) {
+  const notes = [];
+
+  if (!currentLeaderboard) notes.push("No currentLeaderboard object was extracted from the Next.js flight data.");
+  else if (currentLeaderboard._parseError) notes.push(`Found currentLeaderboard marker but JSON extraction failed: ${currentLeaderboard._parseError}`);
+  else if (!entries.length) notes.push("currentLeaderboard was extracted, but result.entries was not found or was empty.");
+  else if (!entryPlayers.length) notes.push("currentLeaderboard.result.entries was found, but player normalization did not produce rows yet.");
+  else notes.push(`currentLeaderboard.result.entries produced ${entryPlayers.length} player rows.`);
+
+  if (!formattedLeaderboard) notes.push("No formattedLeaderboard object was extracted from the Next.js flight data.");
+  else if (formattedLeaderboard._parseError) notes.push(`Found formattedLeaderboard marker but JSON extraction failed: ${formattedLeaderboard._parseError}`);
+  else if (!formattedRows.length) notes.push("formattedLeaderboard was extracted, but leaderboardRows was empty.");
+  else if (!formattedPlayers.length) notes.push(`formattedLeaderboard.leaderboardRows had ${formattedRows.length} rows, but row normalization did not produce players.`);
+  else notes.push(`formattedLeaderboard.leaderboardRows produced ${formattedPlayers.length} player rows.`);
+
+  notes.push(`Selected parse source: ${parseSource}; final deduped players: ${players.length}.`);
+  return notes.join(" ");
 }

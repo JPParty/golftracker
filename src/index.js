@@ -3,7 +3,7 @@ import { runLpgaPopulationProbe } from "./lpgaPopulationProbe.js";
 import { runLpgaHydrationProbe } from "./lpgaHydrationProbe.js";
 import { renderAppHtml } from "./appHtml.js";
 
-export const APP_VERSION = "0.3.3";
+export const APP_VERSION = "0.3.4";
 
 export default {
   async fetch(request, env, ctx) {
