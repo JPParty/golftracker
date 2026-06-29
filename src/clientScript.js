@@ -25,6 +25,28 @@ function formatTime(iso) {
   return new Date(iso).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' });
 }
 
+function isUpcomingTournament(data) {
+  const resolution = data && data.tournamentResolution ? data.tournamentResolution : {};
+  const status = String(resolution.dateStatus || data.resolvedDateStatus || '').toLowerCase();
+  return status === 'upcoming';
+}
+
+function getPriorResultsYear(data) {
+  const sourceUpdatedYear = data && data.sourceUpdated ? new Date(data.sourceUpdated).getFullYear() : null;
+  if (sourceUpdatedYear && !Number.isNaN(sourceUpdatedYear)) return sourceUpdatedYear;
+
+  const resolution = data && data.tournamentResolution ? data.tournamentResolution : {};
+  const dateText = String(resolution.dateText || data.resolvedEventDateText || '');
+  const match = dateText.match(/\b(20\d{2})\b/);
+  if (match) return Number(match[1]) - 1;
+
+  return new Date().getFullYear() - 1;
+}
+
+function priorResultsLabel(data) {
+  return getPriorResultsYear(data) + ' results';
+}
+
 function escapeHtml(value) {
   return String(value).replace(/[&<>"']/g, function(c) {
     return ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#039;'}[c]);
@@ -38,7 +60,8 @@ function render(data) {
 
   eventName.textContent = data.eventName || 'LPGA Leaderboard';
   const cacheText = data.cached ? ' • cached response' : '';
-  lastUpdated.textContent = 'Last successful update: ' + formatTime(data.updatedAt) + cacheText;
+  const priorYearText = isUpcomingTournament(data) ? ' • showing ' + priorResultsLabel(data) : '';
+  lastUpdated.textContent = 'Last successful update: ' + formatTime(data.updatedAt) + priorYearText + cacheText;
 
   if (data.error) {
     notice.style.display = 'block';
@@ -53,12 +76,17 @@ function render(data) {
     return;
   }
 
+  const showingPriorResults = isUpcomingTournament(data);
+  const priorLabel = priorResultsLabel(data);
+
   rows.innerHTML = players.map(function(p) {
     const score = p.total || '-';
     const isPending = p.live === false || String(p.status || '').toLowerCase() === 'pending';
     const subText = isPending
       ? 'Roster-only from Entries' + (p.entryStatus ? ' • ' + p.entryStatus : '')
-      : 'Today: ' + (p.today || '-');
+      : showingPriorResults
+        ? priorLabel
+        : 'Today: ' + (p.today || '-');
     const thruText = isPending ? 'Roster only' : (p.thru || '-');
 
     return '<div class="row ' + (isPending ? 'pending-row' : '') + '">' +
