@@ -7,7 +7,6 @@ const rows = document.getElementById('rows');
 const eventName = document.getElementById('eventName');
 const lastUpdated = document.getElementById('lastUpdated');
 const refreshBtn = document.getElementById('refreshBtn');
-const statusEl = document.getElementById('status');
 const notice = document.getElementById('notice');
 
 let loading = false;
@@ -38,11 +37,12 @@ function render(data) {
   updateDebugStatus(data);
 
   eventName.textContent = data.eventName || 'LPGA Leaderboard';
-  lastUpdated.textContent = 'Last successful update: ' + formatTime(data.updatedAt);
+  const cacheText = data.cached ? ' • cached response' : '';
+  lastUpdated.textContent = 'Last successful update: ' + formatTime(data.updatedAt) + cacheText;
 
-  if (data.warning || data.error) {
+  if (data.error) {
     notice.style.display = 'block';
-    notice.textContent = data.warning || data.error;
+    notice.textContent = data.error;
   } else {
     notice.style.display = 'none';
   }
@@ -74,24 +74,25 @@ async function loadLeaderboard() {
   if (loading) return;
   loading = true;
   refreshBtn.disabled = true;
-  statusEl.textContent = 'Refreshing…';
+  const originalButtonText = refreshBtn.textContent;
+  refreshBtn.textContent = 'Refreshing…';
 
   try {
     const pageParams = new URLSearchParams(window.location.search);
     const tournamentParam = pageParams.get('tournament') || pageParams.get('slug');
-    const apiParams = new URLSearchParams({ ts: String(Date.now()) });
+    const apiParams = new URLSearchParams();
     if (tournamentParam) apiParams.set('tournament', tournamentParam);
-    const response = await fetch('/api/leaderboard?' + apiParams.toString());
+    const apiUrl = apiParams.toString() ? '/api/leaderboard?' + apiParams.toString() : '/api/leaderboard';
+    const response = await fetch(apiUrl);
     const data = await response.json();
     render(data);
-    statusEl.textContent = data.cached ? 'Showing cached data' : 'Auto-refresh: 60 sec';
   } catch (error) {
     notice.style.display = 'block';
     notice.textContent = 'Could not load leaderboard: ' + error.message;
-    statusEl.textContent = 'Refresh failed';
   } finally {
     loading = false;
     refreshBtn.disabled = false;
+    refreshBtn.textContent = originalButtonText || 'Refresh';
   }
 }
 
