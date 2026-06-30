@@ -1,7 +1,7 @@
 import { getLeaderboard } from "./leaderboardService.js";
-import { renderAppHtml, renderResultsHtml, renderScheduleHtml } from "./appHtml.js";
+import { renderAppHtml, renderResultsHtml, renderScheduleHtml, renderFeedbackHtml } from "./appHtml.js";
 
-export const APP_VERSION = "0.3.9";
+export const APP_VERSION = "0.3.10";
 const LEADERBOARD_CACHE_SECONDS = 60;
 
 export default {
@@ -26,6 +26,10 @@ export default {
 
     if (url.pathname === "/schedule") {
       return html(renderScheduleHtml({ appVersion: APP_VERSION }));
+    }
+
+    if (url.pathname === "/feedback") {
+      return html(renderFeedbackHtml({ appVersion: APP_VERSION }));
     }
 
     if (url.pathname === "/manifest.json") {

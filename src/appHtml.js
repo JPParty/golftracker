@@ -1,6 +1,8 @@
 import { styles } from "./styles.js";
 import { getClientScript } from "./clientScript.js";
 
+const FEEDBACK_FORM_URL = "https://docs.google.com/forms/d/e/1FAIpQLSfEXdftkCQ03NjNaMna4zs1QdBo5mjPiTI6uEeP2XZhBDmIZQ/viewform?usp=sharing&ouid=110117195552662510653";
+
 export function renderAppHtml({ appVersion }) {
   return baseHtml({
     appVersion,
@@ -21,6 +23,7 @@ export function renderAppHtml({ appVersion }) {
       </details>
       <div class="actions">
         <button id="refreshBtn">Refresh</button>
+        <a class="button-link feedback-button" href="${FEEDBACK_FORM_URL}" target="_blank" rel="noopener noreferrer">Submit Feedback</a>
       </div>
     </section>
 
@@ -105,6 +108,35 @@ export function renderScheduleHtml({ appVersion }) {
           <div><span>Date</span><strong>TBD</strong></div>
           <div><span>Signature Event</span><strong>TBD</strong></div>
         </div>
+      </div>
+    </section>
+  </main>`
+  });
+}
+
+
+export function renderFeedbackHtml({ appVersion }) {
+  return baseHtml({
+    appVersion,
+    title: "Submit Feedback • GolfTracker",
+    body: `
+  <main class="app">
+    <section class="header page-header">
+      <nav class="top-nav single" aria-label="Current tournament navigation">
+        <a class="nav-button secondary" href="/">← Current Tournament</a>
+      </nav>
+      <div class="eyebrow">GolfTracker • Feedback</div>
+      <h1>Submit Feedback</h1>
+      <div class="meta">Found a bug or have a feature idea? Send it through the GolfTracker feedback form.</div>
+      <div class="page-status">Feedback form opens in a new tab</div>
+    </section>
+
+    <section class="placeholder-card feedback-card" aria-label="Submit GolfTracker feedback">
+      <h2>Help improve GolfTracker</h2>
+      <p>Use the form for bug reports, feature ideas, questions, or general feedback. You can include your name and email only if you want to be contacted.</p>
+
+      <div class="feedback-actions">
+        <a class="button-link feedback-button large" href="${FEEDBACK_FORM_URL}" target="_blank" rel="noopener noreferrer">Open Feedback Form</a>
       </div>
     </section>
   </main>`
