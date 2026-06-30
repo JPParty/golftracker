@@ -26,6 +26,7 @@ body {
   padding: 18px;
   margin-bottom: 12px;
 }
+.page-header { margin-bottom: 14px; }
 .top-nav {
   display: flex;
   align-items: center;
@@ -47,13 +48,28 @@ body {
   font-size: 13px;
   font-weight: 900;
   line-height: 1.1;
+  text-align: center;
+  box-shadow: 0 8px 18px rgba(37, 99, 235, .18);
 }
+.nav-button.secondary { background: #334155; }
 .nav-button:active { transform: scale(.98); }
 .eyebrow { color: var(--green); font-size: 12px; letter-spacing: .08em; text-transform: uppercase; font-weight: 700; }
 h1 { margin: 8px 0 6px; font-size: 22px; line-height: 1.15; }
 h2 { margin: 0 0 8px; font-size: 18px; }
 p { margin: 0; color: var(--muted); line-height: 1.5; }
 .meta { color: var(--muted); font-size: 13px; line-height: 1.4; }
+.page-status {
+  display: inline-flex;
+  align-items: center;
+  margin-top: 12px;
+  padding: 7px 10px;
+  border-radius: 999px;
+  background: rgba(52, 211, 153, .10);
+  color: var(--green);
+  border: 1px solid rgba(52, 211, 153, .24);
+  font-size: 12px;
+  font-weight: 900;
+}
 .debug-details {
   margin-top: 10px;
   border-radius: 12px;
@@ -153,19 +169,41 @@ button:disabled { opacity: .65; cursor: wait; }
   border-radius: 20px;
   padding: 18px;
 }
-.placeholder-example {
+.sample-tournament,
+.schedule-card {
   margin-top: 16px;
   border: 1px solid var(--line);
   border-radius: 16px;
   overflow: hidden;
   background: #020617;
 }
-.placeholder-title {
-  padding: 12px;
+.sample-tournament summary {
+  list-style: none;
+  cursor: pointer;
+  padding: 13px 12px;
   font-weight: 900;
-  border-bottom: 1px solid var(--line);
+  display: flex;
+  align-items: center;
+  gap: 10px;
 }
-.placeholder-row {
+.sample-tournament summary::-webkit-details-marker { display: none; }
+.sample-tournament summary::before {
+  content: '▾';
+  color: var(--green);
+  font-size: 13px;
+}
+.sample-tournament summary small {
+  display: block;
+  margin-top: 3px;
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 700;
+}
+.sample-standings {
+  border-top: 1px solid var(--line);
+}
+.sample-row,
+.schedule-details > div {
   display: flex;
   justify-content: space-between;
   gap: 14px;
@@ -173,8 +211,18 @@ button:disabled { opacity: .65; cursor: wait; }
   border-bottom: 1px solid var(--line);
   color: var(--muted);
 }
-.placeholder-row:last-child { border-bottom: 0; }
-.placeholder-row strong { color: var(--text); }
+.sample-row:last-child,
+.schedule-details > div:last-child { border-bottom: 0; }
+.sample-row strong,
+.schedule-details strong { color: var(--text); }
+.schedule-card { padding: 0; }
+.schedule-card > div:first-child {
+  padding: 13px 12px;
+  border-bottom: 1px solid var(--line);
+}
+.schedule-title { font-weight: 900; }
+.schedule-subtitle { color: var(--muted); font-size: 12px; margin-top: 3px; }
+.schedule-details span { color: var(--muted); }
 .version {
   max-width: 760px;
   margin: 12px auto 20px;
@@ -186,8 +234,8 @@ button:disabled { opacity: .65; cursor: wait; }
 @media (max-width: 430px) {
   .app { padding: 12px; }
   .header { padding: 14px; }
-  .top-nav { gap: 8px; }
-  .nav-button { flex: 1 1 0; padding: 10px 8px; font-size: 12px; }
+  .top-nav { gap: 8px; align-items: stretch; }
+  .nav-button { flex: 1 1 0; padding: 10px 8px; font-size: 12px; min-width: 0; }
   .top-nav.single .nav-button { flex: 0 1 auto; }
   h1 { font-size: 20px; }
   .row, .head { grid-template-columns: 42px 1fr 48px 60px; padding-left: 8px; padding-right: 10px; }

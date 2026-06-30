@@ -1,7 +1,7 @@
 import { getLeaderboard } from "./leaderboardService.js";
 import { renderAppHtml, renderResultsHtml, renderScheduleHtml } from "./appHtml.js";
 
-export const APP_VERSION = "0.3.8";
+export const APP_VERSION = "0.3.9";
 const LEADERBOARD_CACHE_SECONDS = 60;
 
 export default {

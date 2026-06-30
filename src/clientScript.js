@@ -65,14 +65,14 @@ function render(data) {
 
   if (data.error) {
     notice.style.display = 'block';
-    notice.textContent = data.error;
+    notice.textContent = data.error || 'GolfTracker could not load the latest leaderboard. Try Refresh in a moment.';
   } else {
     notice.style.display = 'none';
   }
 
   const players = Array.isArray(data.players) ? data.players : [];
   if (!players.length) {
-    rows.innerHTML = '<div class="empty">No leaderboard data available yet.</div>';
+    rows.innerHTML = '<div class="empty">No leaderboard data is available yet. GolfTracker may be waiting on LPGA tournament data.</div>';
     return;
   }
 
@@ -116,7 +116,7 @@ async function loadLeaderboard() {
     render(data);
   } catch (error) {
     notice.style.display = 'block';
-    notice.textContent = 'Could not load leaderboard: ' + error.message;
+    notice.textContent = 'Could not load leaderboard. Check your connection and try Refresh. Details: ' + error.message;
   } finally {
     loading = false;
     refreshBtn.disabled = false;
