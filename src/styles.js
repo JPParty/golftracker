@@ -104,8 +104,8 @@ p { margin: 0; color: var(--muted); line-height: 1.5; }
   line-height: 1.5;
 }
 .debug-panel b { color: #f8fafc; }
-.actions { display: flex; gap: 10px; margin-top: 14px; }
-button {
+.actions { display: flex; justify-content: space-between; align-items: center; gap: 10px; margin-top: 14px; }
+button, .button-link {
   appearance: none;
   border: 0;
   border-radius: 14px;
@@ -116,9 +116,16 @@ button {
   min-height: 44px;
   cursor: pointer;
   flex: 0 0 auto;
+  text-decoration: none;
+  font-size: 13px;
+  line-height: 1.1;
 }
-button:active { transform: scale(.98); }
+.button-link { display: inline-flex; align-items: center; justify-content: center; }
+.feedback-button { background: #047857; }
+.button-link.large { width: 100%; max-width: 280px; }
+button:active, .button-link:active { transform: scale(.98); }
 button:disabled { opacity: .65; cursor: wait; }
+.feedback-actions { margin-top: 18px; }
 .notice {
   display: none;
   border: 1px solid #7f1d1d;
@@ -237,6 +244,8 @@ button:disabled { opacity: .65; cursor: wait; }
   .top-nav { gap: 8px; align-items: stretch; }
   .nav-button { flex: 1 1 0; padding: 10px 8px; font-size: 12px; min-width: 0; }
   .top-nav.single .nav-button { flex: 0 1 auto; }
+  .actions { align-items: stretch; }
+  .actions button, .actions .button-link { flex: 0 0 auto; min-width: 0; }
   h1 { font-size: 20px; }
   .row, .head { grid-template-columns: 42px 1fr 48px 60px; padding-left: 8px; padding-right: 10px; }
   .score { font-size: 19px; }
